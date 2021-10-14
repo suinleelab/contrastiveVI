@@ -1,5 +1,8 @@
 # IDE
-.idea/*
+.idea
 
 # Jupyter notebook
-.ipynb_checkpoints/*
+.ipynb_checkpoints
+
+# Distribution
+*.egg-info
