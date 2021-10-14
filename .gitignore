@@ -1,0 +1,5 @@
+# IDE
+.idea/*
+
+# Jupyter notebook
+.ipynb_checkpoints/*
