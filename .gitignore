@@ -6,3 +6,6 @@
 
 # Distribution
 *.egg-info
+
+# Python
+*__pycache__
