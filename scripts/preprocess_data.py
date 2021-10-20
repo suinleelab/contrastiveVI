@@ -3,15 +3,17 @@ import argparse
 import os
 import sys
 
+from contrastive_vi.data.datasets.haber_2017 import (
+    download_haber_2017,
+    preprocess_haber_2017,
+)
 from contrastive_vi.data.datasets.zheng_2017 import (
     download_zheng_2017,
     preprocess_zheng_2017,
 )
 
 
-def download_and_preprocess_zheng_2017(
-    output_path: str, n_top_genes: int
-) -> None:
+def download_and_preprocess_zheng_2017(output_path: str, n_top_genes: int) -> None:
     """Download, preprocess, and save data from Zheng et al. 2017.
 
     Args:
@@ -33,17 +35,41 @@ def download_and_preprocess_zheng_2017(
     adata.write_h5ad(filename=filename)
 
 
+def download_and_preprocess_haber_2017(output_path: str, n_top_genes: int) -> None:
+    """Download, preprocess, and save data from Haber et al. 2017.
+
+    Args:
+        output_path: Path to save output files.
+        n_top_genes: Number of most variable genes to retain.
+
+    Returns:
+        None. Raw Data are saved in output_path. Preprocessed data are saved
+        in a sub-directory called "preprocessed" in output_path.
+    """
+    download_haber_2017(output_path)
+    adata = preprocess_haber_2017(output_path, n_top_genes)
+    preprocessed_directory = os.path.join(output_path, "preprocessed")
+    os.makedirs(preprocessed_directory, exist_ok=True)
+    filename = os.path.join(
+        preprocessed_directory,
+        f"adata_top_{n_top_genes}_genes.h5ad",
+    )
+    adata.write_h5ad(filename=filename)
+
+
 def main():
     """Run main function."""
     preprocess_function_dict = {
-        "zheng_2017": download_and_preprocess_zheng_2017
+        "zheng_2017": download_and_preprocess_zheng_2017,
+        "haber_2017": download_and_preprocess_haber_2017,
     }
     parser = argparse.ArgumentParser(description="Preprocess data.")
     parser.add_argument(
         "dataset",
         type=str,
-        choices=["zheng_2017"],
-        help="Preprocess single-cell expression data from Zheng et al. 2017.",
+        choices=["zheng_2017", "haber_2017"],
+        help="Preprocess single-cell expression data from Zheng et al. 2017 or Haber "
+        "et al. 2017",
     )
     parser.add_argument(
         "--n-top-genes",
@@ -66,9 +92,7 @@ def main():
     preprocess_data_function = preprocess_function_dict[args.dataset]
     output_path = os.path.join(args.output_path, args.dataset)
     os.makedirs(output_path, exist_ok=True)
-    preprocess_data_function(
-        output_path=output_path, n_top_genes=args.n_top_genes
-    )
+    preprocess_data_function(output_path=output_path, n_top_genes=args.n_top_genes)
     print("Done!")
 
 
