@@ -15,3 +15,7 @@ development by running `pip install -e ".[dev]"`.
 check and fix formatting errors before a Git commit happens. Run
 `pre-commit install` to install all the hooks.
 6. Test that the pre-commit hooks work by running `pre-commit run --all-files`.
+
+### Testing
+It's a good practice to include unit tests during development.
+Run `pytest tests` to verify existing tests.
