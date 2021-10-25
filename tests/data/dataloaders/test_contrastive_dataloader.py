@@ -40,8 +40,8 @@ class TestContrastiveDataLoader:
         assert torch.equal(batch[1][_CONSTANTS.X_KEY], expected_target_data)
 
         assert (
-            batch[0][_CONSTANTS.CAT_COVS_KEY] == mock_adata_background_label
+            batch[0][_CONSTANTS.BATCH_KEY] == mock_adata_background_label
         ).sum() == batch_size
         assert (
-            batch[1][_CONSTANTS.CAT_COVS_KEY] == mock_adata_target_label
+            batch[1][_CONSTANTS.BATCH_KEY] == mock_adata_target_label
         ).sum() == batch_size
