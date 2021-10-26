@@ -6,9 +6,11 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from scvi import _CONSTANTS
-from scvi.module.base import BaseModuleClass, auto_move_data
+from scvi.distributions import ZeroInflatedNegativeBinomial
+from scvi.module.base import BaseModuleClass, LossRecorder, auto_move_data
 from scvi.nn import DecoderSCVI, Encoder, one_hot
 from torch.distributions import Normal
+from torch.distributions import kl_divergence as kl
 
 torch.backends.cudnn.benchmark = True
 
@@ -285,7 +287,211 @@ class ContrastiveVIModule(BaseModuleClass):
         self,
         background: Dict[str, torch.Tensor],
         target: Dict[str, torch.Tensor],
-    ) -> Dict[str, torch.Tensor]:
+    ) -> Dict[str, Dict[str, torch.Tensor]]:
         background_outputs = self._generic_generative(**background)
         target_outputs = self._generic_generative(**target)
         return dict(background=background_outputs, target=target_outputs)
+
+    @staticmethod
+    def reconstruction_loss(
+        x: torch.Tensor,
+        px_rate: torch.Tensor,
+        px_r: torch.Tensor,
+        px_dropout: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute likelihood loss for zero-inflated negative binomial distribution.
+
+        Args:
+        ----
+            x: Input data.
+            px_rate: Mean of distribution.
+            px_r: Inverse dispersion.
+            px_dropout: Logits scale of zero inflation probability.
+
+        Returns
+        -------
+            Negative log likelihood (reconstruction loss) for each data point. If number
+            of latent samples == 1, the tensor has shape `(batch_size, )`. If number
+            of latent samples > 1, the tensor has shape `(n_samples, batch_size)`.
+        """
+        recon_loss = (
+            -ZeroInflatedNegativeBinomial(mu=px_rate, theta=px_r, zi_logits=px_dropout)
+            .log_prob(x)
+            .sum(dim=-1)
+        )
+        return recon_loss
+
+    @staticmethod
+    def latent_kl_divergence(
+        variational_mean: torch.Tensor,
+        variational_var: torch.Tensor,
+        prior_mean: torch.Tensor,
+        prior_var: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute KL divergence between a variational posterior and prior Gaussian.
+        Args:
+        ----
+            variational_mean: Mean of the variational posterior Gaussian.
+            variational_var: Variance of the variational posterior Gaussian.
+            prior_mean: Mean of the prior Gaussian.
+            prior_var: Variance of the prior Gaussian.
+
+        Returns
+        -------
+            KL divergence for each data point. If number of latent samples == 1,
+            the tensor has shape `(batch_size, )`. If number of latent
+            samples > 1, the tensor has shape `(n_samples, batch_size)`.
+        """
+        return kl(
+            Normal(variational_mean, variational_var.sqrt()),
+            Normal(prior_mean, prior_var.sqrt()),
+        ).sum(dim=-1)
+
+    def library_kl_divergence(
+        self,
+        batch_index: torch.Tensor,
+        variational_library_mean: torch.Tensor,
+        variational_library_var: torch.Tensor,
+        library: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute KL divergence between library size variational posterior and prior.
+
+        Both the variational posterior and prior are Log-Normal.
+        Args:
+        ----
+            batch_index: Batch indices for batch-specific library size mean and
+                variance.
+            variational_library_mean: Mean of variational Log-Normal.
+            variational_library_var: Variance of variational Log-Normal.
+            library: Sampled library size.
+
+        Returns
+        -------
+            KL divergence for each data point. If number of latent samples == 1,
+            the tensor has shape `(batch_size, )`. If number of latent
+            samples > 1, the tensor has shape `(n_samples, batch_size)`.
+        """
+        if not self.use_observed_lib_size:
+            (
+                local_library_log_means,
+                local_library_log_vars,
+            ) = self._compute_local_library_params(batch_index)
+
+            kl_library = kl(
+                Normal(variational_library_mean, variational_library_var.sqrt()),
+                Normal(local_library_log_means, local_library_log_vars.sqrt()),
+            )
+        else:
+            kl_library = torch.zeros_like(library)
+        return kl_library.sum(dim=-1)
+
+    def _generic_loss(
+        self,
+        tensors: Dict[str, torch.Tensor],
+        inference_outputs: Dict[str, torch.Tensor],
+        generative_outputs: Dict[str, torch.Tensor],
+    ) -> Dict[str, torch.Tensor]:
+        x = tensors[_CONSTANTS.X_KEY]
+        batch_index = tensors[_CONSTANTS.BATCH_KEY]
+
+        qz_m = inference_outputs["qz_m"]
+        qz_v = inference_outputs["qz_v"]
+        qs_m = inference_outputs["qs_m"]
+        qs_v = inference_outputs["qs_v"]
+        library = inference_outputs["library"]
+        ql_m = inference_outputs["ql_m"]
+        ql_v = inference_outputs["ql_v"]
+        px_rate = generative_outputs["px_rate"]
+        px_r = generative_outputs["px_r"]
+        px_dropout = generative_outputs["px_dropout"]
+
+        prior_z_m = torch.zeros_like(qz_m)
+        prior_z_v = torch.ones_like(qz_v)
+        prior_s_m = torch.zeros_like(qs_m)
+        prior_s_v = torch.ones_like(qs_v)
+
+        recon_loss = self.reconstruction_loss(x, px_rate, px_r, px_dropout)
+        kl_z = self.latent_kl_divergence(qz_m, qz_v, prior_z_m, prior_z_v)
+        kl_s = self.latent_kl_divergence(qs_m, qs_v, prior_s_m, prior_s_v)
+        kl_library = self.library_kl_divergence(batch_index, ql_m, ql_v, library)
+        return dict(
+            recon_loss=recon_loss,
+            kl_z=kl_z,
+            kl_s=kl_s,
+            kl_library=kl_library,
+        )
+
+    def loss(
+        self,
+        concat_tensors: Tuple[Dict[str, torch.Tensor]],
+        inference_outputs: Dict[str, Dict[str, torch.Tensor]],
+        generative_outputs: Dict[str, Dict[str, torch.Tensor]],
+        kl_weight: float = 1.0,
+    ) -> LossRecorder:
+        """
+        Compute loss terms for contrastive-VI.
+        Args:
+        ----
+            concat_tensors: Tuple of data mini-batch. The first element contains
+                background data mini-batch. The second element contains target data
+                mini-batch.
+            inference_outputs: Dictionary of inference step outputs. The keys
+                are "background" and "target" for the corresponding outputs.
+            generative_outputs: Dictionary of generative step outputs. The keys
+                are "background" and "target" for the corresponding outputs.
+            kl_weight: Importance weight for KL divergence of background and salient
+                latent variables, relative to KL divergence of library size.
+
+        Returns
+        -------
+            An scvi.module.base.LossRecorder instance that records the following:
+            loss: One-dimensional tensor for overall loss used for optimization.
+            reconstruction_loss: Reconstruction loss with shape
+                `(n_samples, batch_size)` if number of latent samples > 1, or
+                `(batch_size, )` if number of latent samples == 1.
+            kl_local: KL divergence term with shape
+                `(n_samples, batch_size)` if number of latent samples > 1, or
+                `(batch_size, )` if number of latent samples == 1.
+            kl_global: One-dimensional tensor for global KL divergence term.
+        """
+        background_tensors = concat_tensors[0]
+        target_tensors = concat_tensors[1]
+        background_losses = self._generic_loss(
+            background_tensors,
+            inference_outputs["background"],
+            generative_outputs["background"],
+        )
+        target_losses = self._generic_loss(
+            target_tensors,
+            inference_outputs["target"],
+            generative_outputs["target"],
+        )
+        recon_loss = background_losses["recon_loss"] + target_losses["recon_loss"]
+        kl_z = background_losses["kl_z"] + target_losses["kl_z"]
+        kl_s = target_losses["kl_s"]
+        kl_library = background_losses["kl_library"] + target_losses["kl_library"]
+
+        kl_local_for_warmup = kl_z + kl_s
+        kl_local_no_warmup = kl_library
+
+        weighted_kl_local = kl_weight * kl_local_for_warmup + kl_local_no_warmup
+        loss = torch.mean(recon_loss + weighted_kl_local)
+        kl_local = dict(
+            kl_z=kl_z,
+            kl_s=kl_s,
+            kl_library=kl_library,
+        )
+        kl_global = torch.tensor(0.0)
+        return LossRecorder(loss, recon_loss, kl_local, kl_global)
+
+    @torch.no_grad()
+    def sample(self):
+        raise NotImplementedError
+
+    @torch.no_grad()
+    @auto_move_data
+    def marginal_ll(self):
+        raise NotImplementedError
