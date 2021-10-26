@@ -1,5 +1,6 @@
 import pytest
 import torch
+from scvi.module.base import LossRecorder
 
 from contrastive_vi.module.contrastive_vi import ContrastiveVIModule
 
@@ -56,7 +57,31 @@ def mock_contrastive_vi_module(
         )
 
 
-class TestContrastiveVIModule:
+@pytest.fixture(params=[1, 2], ids=["one_latent_sample", "two_latent_samples"])
+def mock_contrastive_vi_data(
+    mock_contrastive_batch,
+    mock_contrastive_vi_module,
+    request,
+):
+    concat_tensors = mock_contrastive_batch
+    inference_input = mock_contrastive_vi_module._get_inference_input(concat_tensors)
+    inference_outputs = mock_contrastive_vi_module.inference(
+        **inference_input, n_samples=request.param
+    )
+    generative_input = mock_contrastive_vi_module._get_generative_input(
+        concat_tensors, inference_outputs
+    )
+    generative_outputs = mock_contrastive_vi_module.generative(**generative_input)
+    return dict(
+        concat_tensors=concat_tensors,
+        inference_input=inference_input,
+        inference_outputs=inference_outputs,
+        generative_input=generative_input,
+        generative_outputs=generative_outputs,
+    )
+
+
+class TestContrastiveVIModuleInference:
     def test_get_inference_input_from_concat_tensors(
         self,
         mock_contrastive_vi_module,
@@ -103,22 +128,6 @@ class TestContrastiveVIModule:
             background_input["batch_index"] != mock_adata_background_label
         ).sum() == 0
         assert (target_input["batch_index"] != mock_adata_target_label).sum() == 0
-
-    def test_get_generative_input_from_concat_tensors(
-        self,
-        mock_contrastive_vi_module,
-        mock_contrastive_batch,
-        mock_n_input,
-    ):
-        generative_input = (
-            mock_contrastive_vi_module._get_generative_input_from_concat_tensors(
-                mock_contrastive_batch, 0
-            )
-        )
-        for key in required_generative_input_keys_from_concat_tensors:
-            assert key in generative_input.keys()
-        batch_index = generative_input["batch_index"]
-        assert batch_index.shape[1] == 1
 
     @pytest.mark.parametrize("n_samples", [1, 2])
     def test_generic_inference(
@@ -179,6 +188,24 @@ class TestContrastiveVIModule:
 
         # Background salient variables should be all zeros.
         assert torch.equal(background_s, torch.zeros_like(background_s))
+
+
+class TestContrastiveVIModuleGenerative:
+    def test_get_generative_input_from_concat_tensors(
+        self,
+        mock_contrastive_vi_module,
+        mock_contrastive_batch,
+        mock_n_input,
+    ):
+        generative_input = (
+            mock_contrastive_vi_module._get_generative_input_from_concat_tensors(
+                mock_contrastive_batch, 0
+            )
+        )
+        for key in required_generative_input_keys_from_concat_tensors:
+            assert key in generative_input.keys()
+        batch_index = generative_input["batch_index"]
+        assert batch_index.shape[1] == 1
 
     def test_get_generative_input_from_inference_outputs(
         self,
@@ -290,3 +317,100 @@ class TestContrastiveVIModule:
         generative_outputs = mock_contrastive_vi_module.generative(**generative_input)
         for data_source in required_data_sources:
             assert data_source in generative_outputs.keys()
+
+
+class TestContrastiveVIModuleLoss:
+    def test_reconstruction_loss(
+        self, mock_contrastive_vi_module, mock_contrastive_vi_data
+    ):
+        inference_input = mock_contrastive_vi_data["inference_input"]["background"]
+        generative_outputs = mock_contrastive_vi_data["generative_outputs"][
+            "background"
+        ]
+        x = inference_input["x"]
+        px_rate = generative_outputs["px_rate"]
+        px_r = generative_outputs["px_r"]
+        px_dropout = generative_outputs["px_dropout"]
+        recon_loss = mock_contrastive_vi_module.reconstruction_loss(
+            x, px_rate, px_r, px_dropout
+        )
+        if len(px_rate.shape) == 3:
+            expected_shape = px_rate.shape[:2]
+        else:
+            expected_shape = px_rate.shape[:1]
+        assert recon_loss.shape == expected_shape
+
+    def test_latent_kl_divergence(
+        self, mock_contrastive_vi_module, mock_contrastive_vi_data
+    ):
+        inference_outputs = mock_contrastive_vi_data["inference_outputs"]["background"]
+        qz_m = inference_outputs["qz_m"]
+        qz_v = inference_outputs["qz_v"]
+        kl_z = mock_contrastive_vi_module.latent_kl_divergence(
+            variational_mean=qz_m,
+            variational_var=qz_v,
+            prior_mean=torch.zeros_like(qz_m),
+            prior_var=torch.ones_like(qz_v),
+        )
+        assert kl_z.shape == qz_m.shape[:-1]
+
+    def test_library_kl_divergence(
+        self, mock_contrastive_vi_module, mock_contrastive_vi_data
+    ):
+        inference_input = mock_contrastive_vi_data["inference_input"]["background"]
+        inference_outputs = mock_contrastive_vi_data["inference_outputs"]["background"]
+        batch_index = inference_input["batch_index"]
+        ql_m = inference_outputs["ql_m"]
+        ql_v = inference_outputs["ql_v"]
+        library = inference_outputs["library"]
+        kl_library = mock_contrastive_vi_module.library_kl_divergence(
+            batch_index, ql_m, ql_v, library
+        )
+        expected_shape = library.shape[:-1]
+        assert kl_library.shape == expected_shape
+        if mock_contrastive_vi_module.use_observed_lib_size:
+            assert torch.equal(kl_library, torch.zeros(expected_shape))
+
+    def test_loss(self, mock_contrastive_vi_module, mock_contrastive_vi_data):
+        expected_shape = mock_contrastive_vi_data["inference_outputs"]["background"][
+            "qz_m"
+        ].shape[:-1]
+        losses = mock_contrastive_vi_module.loss(
+            mock_contrastive_vi_data["concat_tensors"],
+            mock_contrastive_vi_data["inference_outputs"],
+            mock_contrastive_vi_data["generative_outputs"],
+        )
+        loss = losses.loss
+        recon_loss = losses.reconstruction_loss
+        kl_local = losses.kl_local
+        kl_global = losses.kl_global
+
+        assert loss.shape == tuple()
+        assert recon_loss.shape == expected_shape
+        assert kl_local.shape == expected_shape
+        assert kl_global.shape == tuple()
+
+    @pytest.mark.parametrize("compute_loss", [True, False])
+    def test_forward(
+        self,
+        mock_contrastive_vi_module,
+        mock_contrastive_vi_data,
+        compute_loss,
+    ):
+        concat_tensors = mock_contrastive_vi_data["concat_tensors"]
+        if compute_loss:
+            inference_outputs, generative_outputs, losses = mock_contrastive_vi_module(
+                concat_tensors, compute_loss=compute_loss
+            )
+            assert isinstance(losses, LossRecorder)
+        else:
+            inference_outputs, generative_outputs = mock_contrastive_vi_module(
+                concat_tensors, compute_loss=compute_loss
+            )
+        for data_source in required_data_sources:
+            assert data_source in inference_outputs.keys()
+            assert data_source in generative_outputs.keys()
+            for key in required_inference_output_keys:
+                assert key in inference_outputs[data_source].keys()
+            for key in required_generative_output_keys:
+                assert key in generative_outputs[data_source].keys()
