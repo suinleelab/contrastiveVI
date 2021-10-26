@@ -7,10 +7,8 @@ import os
 import pandas as pd
 import scanpy as sc
 from anndata import AnnData
-from rpy2 import robjects
-from rpy2.rinterface_lib.embedded import RRuntimeError
-from rpy2.robjects.packages import importr
-from rpy2.robjects.pandas2ri import rpy2py
+
+from contrastive_vi.data.utils import read_seurat_cell_metadata, read_seurat_raw_counts
 
 
 def download_blish_2020(output_path: str) -> None:
@@ -31,7 +29,7 @@ def download_blish_2020(output_path: str) -> None:
             "RDS file from "
             "https://cellxgene.cziscience.com/collections"
             "/a72afd53-ab92-4511-88da-252fb0e26b9a and place it in"
-            "{output_path} to continue."
+            f"{output_path} to continue."
         )
 
 
@@ -39,34 +37,15 @@ def read_blish_2020(file_directory: str) -> pd.DataFrame:
     """Read the expression data for Blish et al. 2020 in the given directory.
 
     Args:
-        file_directory: Directory containing Haber et al. 2017 data.
+        file_directory: Directory containing Blish et al. 2020 data.
 
     Returns:
         A data frame containing single-cell gene expression count, with cell
         identification barcodes as column names and gene IDs as indices.
     """
     # Load in required R packages to handle Seurat object file
-    try:
-        base = importr("base")
-        seurat_object = importr("SeuratObject")
-    except RRuntimeError:
-        raise ImportError(
-            "Unable to load R environment with SeuratObject package. Please ensure you "
-            "have a working installation of R with the SeuratObject "
-            "package installed before continuing."
-        )
-    readRDS = robjects.r["readRDS"]
-
-    rds_object = readRDS(os.path.join(file_directory, "local.rds"))
-
-    r_df = base.as_data_frame(
-        base.as_matrix(seurat_object.GetAssayData(object=rds_object, slot="counts"))
-    )
-
-    # Converts the R dataframe object to a pandas dataframe via rpy2
-    pandas_df = rpy2py(r_df)
-
-    return pandas_df
+    seurat_object_path = os.path.join(file_directory, "local.rds")
+    return read_seurat_raw_counts(seurat_object_path)
 
 
 def preprocess_blish_2020(download_path: str, n_top_genes: int) -> AnnData:
@@ -87,12 +66,10 @@ def preprocess_blish_2020(download_path: str, n_top_genes: int) -> AnnData:
     df = read_blish_2020(download_path)
     df = df.transpose()
 
-    readRDS = robjects.r["readRDS"]
-    rds_object = readRDS(os.path.join(download_path, "local.rds"))
-    metadata_r_df = rds_object.slots["meta.data"]
-    metadata_pandas_df = rpy2py(metadata_r_df)
+    seurat_object_path = os.path.join(download_path, "local.rds")
+    metadata_df = read_seurat_cell_metadata(seurat_object_path)
 
-    adata = AnnData(X=df.values, obs=metadata_pandas_df)
+    adata = AnnData(X=df.values, obs=metadata_df)
     adata.layers["count"] = adata.X.copy()
     sc.pp.normalize_total(adata)
     sc.pp.log1p(adata)
