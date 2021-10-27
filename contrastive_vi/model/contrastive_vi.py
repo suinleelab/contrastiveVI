@@ -23,10 +23,13 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
             `ContrastiveVIModel.setup_anndata`.
         background_indices: Indices for background samples in `adata`.
         target_indices: Indices for target samples in `adata`.
+        n_batch: Number of batches. If 0, no batch effect correction is performed.
         n_hidden: Number of nodes per hidden layer.
         n_latent: Dimensionality of the latent space.
         n_layers: Number of hidden layers used for encoder and decoder NNs.
-        **model_kwargs: Additional kwargs for `ContrastiveVIModule`.
+        dropout_rate: Dropout rate for neural networks.
+        use_observed_lib_size: Use observed library size for RNA as scaling factor in
+            mean of conditional distribution.
     """
 
     def __init__(
