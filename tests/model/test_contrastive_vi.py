@@ -19,8 +19,6 @@ def mock_contrastive_vi_model(
     if request.param:
         return ContrastiveVIModel(
             mock_adata,
-            mock_adata_background_indices,
-            mock_adata_target_indices,
             n_hidden=16,
             n_latent=4,
             n_layers=2,
@@ -29,8 +27,6 @@ def mock_contrastive_vi_model(
     else:
         return ContrastiveVIModel(
             mock_adata,
-            mock_adata_background_indices,
-            mock_adata_target_indices,
             n_hidden=16,
             n_latent=4,
             n_layers=2,

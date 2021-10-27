@@ -21,8 +21,6 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
     ----
         adata: AnnData object that has been registered via
             `ContrastiveVIModel.setup_anndata`.
-        background_indices: Indices for background samples in `adata`.
-        target_indices: Indices for target samples in `adata`.
         n_batch: Number of batches. If 0, no batch effect correction is performed.
         n_hidden: Number of nodes per hidden layer.
         n_latent: Dimensionality of the latent space.
@@ -35,8 +33,6 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
     def __init__(
         self,
         adata: AnnData,
-        background_indices: List[int],
-        target_indices: List[int],
         n_batch: int = 0,
         n_hidden: int = 128,
         n_latent: int = 10,
