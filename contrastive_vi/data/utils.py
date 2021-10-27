@@ -1,4 +1,5 @@
 """Data preprocessing utilities."""
+import os
 from typing import Tuple
 
 import numpy as np
@@ -153,3 +154,26 @@ def get_library_log_means_and_vars(adata: AnnData) -> Tuple[np.ndarray, np.ndarr
     library_log_means = np.array(library_log_means)[np.newaxis, :]
     library_log_vars = np.array(library_log_vars)[np.newaxis, :]
     return library_log_means, library_log_vars
+
+
+def save_preprocessed_adata(adata: AnnData, output_path: str) -> None:
+    """
+    Save given AnnData object with preprocessed data to disk using our dataset file
+    naming convention.
+
+    Args:
+        adata: AnnData object containing expression count data as well as metadata.
+        output_path: Path to save resulting file.
+
+    Returns:
+        None. Provided AnnData object is saved to disk in a subdirectory called
+        "preprocessed" in output_path.
+    """
+    preprocessed_directory = os.path.join(output_path, "preprocessed")
+    os.makedirs(preprocessed_directory, exist_ok=True)
+    n_genes = adata.shape[1]
+    filename = os.path.join(
+        preprocessed_directory,
+        f"adata_top_{n_genes}_genes.h5ad",
+    )
+    adata.write_h5ad(filename=filename)
