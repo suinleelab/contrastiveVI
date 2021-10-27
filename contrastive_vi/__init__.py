@@ -26,7 +26,7 @@ logger.setLevel(logging.INFO)
 console = Console(force_terminal=True)
 console.is_jupyter = False
 ch = RichHandler(show_path=False, console=console, show_time=False)
-formatter = logging.Formatter("mypackage: %(message)s")
+formatter = logging.Formatter("contrastive_vi: %(message)s")
 ch.setFormatter(formatter)
 logger.addHandler(ch)
 
