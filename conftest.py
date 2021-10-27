@@ -3,6 +3,7 @@ import pytest
 import scvi
 
 from contrastive_vi.data.dataloaders.contrastive_dataloader import ContrastiveDataLoader
+from contrastive_vi.data.utils import get_library_log_means_and_vars
 from tests.utils import get_next_batch
 
 
@@ -20,33 +21,18 @@ def mock_adata():
 
 
 @pytest.fixture
-def mock_library_log_means(mock_adata):
-    library_log_means = []
-    for batch in mock_adata.uns["_scvi"]["categorical_mappings"]["_scvi_batch"][
-        "mapping"
-    ]:
-        library = (
-            mock_adata[mock_adata.obs["batch"] == batch].layers["raw_counts"].sum(1)
-        )
-        library_log = np.log(library)
-        library_log_means.append(library_log.mean())
-    library_log_means = np.array(library_log_means)[np.newaxis, :]
-    return library_log_means
+def mock_library_log_means_and_vars(mock_adata):
+    return get_library_log_means_and_vars(mock_adata)
 
 
 @pytest.fixture
-def mock_library_log_vars(mock_adata):
-    library_log_vars = []
-    for batch in mock_adata.uns["_scvi"]["categorical_mappings"]["_scvi_batch"][
-        "mapping"
-    ]:
-        library = (
-            mock_adata[mock_adata.obs["batch"] == batch].layers["raw_counts"].sum(1)
-        )
-        library_log = np.log(library)
-        library_log_vars.append(library_log.var())
-    library_log_vars = np.array(library_log_vars)[np.newaxis, :]
-    return library_log_vars
+def mock_library_log_means(mock_library_log_means_and_vars):
+    return mock_library_log_means_and_vars[0]
+
+
+@pytest.fixture
+def mock_library_log_vars(mock_library_log_means_and_vars):
+    return mock_library_log_means_and_vars[1]
 
 
 @pytest.fixture
