@@ -82,9 +82,11 @@ class ContrastiveDataSplitter(pl.LightningDataModule):
         ]
         self.target_test_idx = target_permutation[(n_target_val + n_target_train) :]
 
-        self.train_idx = self.background_train_idx + self.target_train_idx
-        self.val_idx = self.background_val_idx + self.target_val_idx
-        self.test_idx = self.background_test_idx + self.target_test_idx
+        self.train_idx = np.concatenate(
+            (self.background_train_idx, self.target_train_idx)
+        )
+        self.val_idx = np.concatenate((self.background_val_idx, self.target_val_idx))
+        self.test_idx = np.concatenate((self.background_test_idx, self.target_test_idx))
 
         gpus, self.device = parse_use_gpu_arg(self.use_gpu, return_device=True)
         self.pin_memory = (

@@ -9,7 +9,11 @@ from tests.utils import get_next_batch
 
 @pytest.fixture
 def mock_adata():
-    adata = scvi.data.synthetic_iid(run_setup_anndata=False, n_batches=2)
+    adata = scvi.data.synthetic_iid(
+        run_setup_anndata=False, n_batches=2  # Same number of cells in each batch.
+    )
+    # Make number of cells unequal across batches to test edge cases.
+    adata = adata[:-3, :]
     adata.layers["raw_counts"] = adata.X.copy()
     scvi.model.SCVI.setup_anndata(
         adata,

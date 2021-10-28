@@ -140,14 +140,20 @@ def get_library_log_means_and_vars(adata: AnnData) -> Tuple[np.ndarray, np.ndarr
         A tuple of numpy array `library_log_means` and `library_log_vars` for the mean
         and variance, respectively. Each has shape `(1, n_batch)`.
     """
+    count_data_registry = adata.uns["_scvi"]["data_registry"]["X"]
+    if count_data_registry["attr_name"] == "layers":
+        count_data = adata.layers[count_data_registry["attr_key"]]
+    else:
+        count_data = adata.X
+
     library_log_means = []
     library_log_vars = []
     batches = adata.uns["_scvi"]["categorical_mappings"]["_scvi_batch"]["mapping"]
     for batch in batches:
         if len(batches) > 1:
-            library = adata[adata.obs["batch"] == batch].layers["raw_counts"].sum(1)
+            library = count_data[adata.obs["batch"] == batch].sum(1)
         else:
-            library = adata.layers["raw_counts"].sum(1)
+            library = count_data.sum(1)
         library_log = np.log(library)
         library_log_means.append(library_log.mean())
         library_log_vars.append(library_log.var())
@@ -162,10 +168,12 @@ def save_preprocessed_adata(adata: AnnData, output_path: str) -> None:
     naming convention.
 
     Args:
+    ----
         adata: AnnData object containing expression count data as well as metadata.
         output_path: Path to save resulting file.
 
-    Returns:
+    Returns
+    -------
         None. Provided AnnData object is saved to disk in a subdirectory called
         "preprocessed" in output_path.
     """
