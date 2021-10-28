@@ -46,6 +46,7 @@ class TestContrastiveVIModel:
             background_indices=mock_adata_background_indices,
             target_indices=mock_adata_target_indices,
             max_epochs=10,
+            batch_size=20,  # Unequal final batches to test edge case.
         )
         trained_state_dict = copy_module_state_dict(mock_contrastive_vi_model.module)
         for param_key in mock_contrastive_vi_model.module.state_dict().keys():
