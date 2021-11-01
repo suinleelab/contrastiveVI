@@ -24,7 +24,8 @@ class ContrastiveVIModule(BaseModuleClass):
         n_input: Number of input genes.
         n_batch: Number of batches. If 0, no batch effect correction is performed.
         n_hidden: Number of nodes per hidden layer.
-        n_latent: Dimensionality of the latent space.
+        n_background_latent: Dimensionality of the background latent space.
+        n_salient_latent: Dimensionality of the salient latent space.
         n_layers: Number of hidden layers used for encoder and decoder NNs.
         dropout_rate: Dropout rate for neural networks.
         use_observed_lib_size: Use observed library size for RNA as scaling factor in
@@ -40,7 +41,8 @@ class ContrastiveVIModule(BaseModuleClass):
         n_input: int,
         n_batch: int = 0,
         n_hidden: int = 128,
-        n_latent: int = 10,
+        n_background_latent: int = 10,
+        n_salient_latent: int = 10,
         n_layers: int = 1,
         dropout_rate: float = 0.1,
         use_observed_lib_size: bool = True,
@@ -51,7 +53,8 @@ class ContrastiveVIModule(BaseModuleClass):
         self.n_input = n_input
         self.n_batch = n_batch
         self.n_hidden = n_hidden
-        self.n_latent = n_latent
+        self.n_background_latent = n_background_latent
+        self.n_salient_latent = n_salient_latent
         self.n_layers = n_layers
         self.dropout_rate = dropout_rate
         self.latent_distribution = "normal"
@@ -76,7 +79,7 @@ class ContrastiveVIModule(BaseModuleClass):
         # Background encoder.
         self.z_encoder = Encoder(
             n_input,
-            n_latent,
+            n_background_latent,
             n_cat_list=cat_list,
             n_layers=n_layers,
             n_hidden=n_hidden,
@@ -90,7 +93,7 @@ class ContrastiveVIModule(BaseModuleClass):
         # Salient encoder.
         self.s_encoder = Encoder(
             n_input,
-            n_latent,
+            n_salient_latent,
             n_cat_list=cat_list,
             n_layers=n_layers,
             n_hidden=n_hidden,
@@ -115,7 +118,7 @@ class ContrastiveVIModule(BaseModuleClass):
             var_activation=None,
         )
         # Decoder from latent variable to distribution parameters in data space.
-        n_input_decoder = n_latent * 2
+        n_input_decoder = n_background_latent + n_salient_latent
         self.decoder = DecoderSCVI(
             n_input_decoder,
             n_input,
@@ -502,11 +505,12 @@ class ContrastiveVIModule(BaseModuleClass):
         kl_s = target_losses["kl_s"]
         kl_library = background_losses["kl_library"] + target_losses["kl_library"]
 
-        kl_local_for_warmup = kl_z + kl_s
-        kl_local_no_warmup = kl_library
-
-        weighted_kl_local = kl_weight * kl_local_for_warmup + kl_local_no_warmup
-        loss = torch.mean(recon_loss + weighted_kl_local)
+        loss = (
+            torch.sum(recon_loss)
+            + torch.sum(kl_z)
+            + torch.sum(kl_s)
+            + torch.sum(kl_library)
+        )
         kl_local = dict(
             kl_z=kl_z,
             kl_s=kl_s,

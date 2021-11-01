@@ -38,7 +38,8 @@ def mock_contrastive_vi_module(
             n_input=mock_n_input,
             n_batch=mock_n_batch,
             n_hidden=10,
-            n_latent=4,
+            n_background_latent=4,
+            n_salient_latent=4,
             n_layers=2,
             use_observed_lib_size=True,
             library_log_means=None,
@@ -49,7 +50,8 @@ def mock_contrastive_vi_module(
             n_input=mock_n_input,
             n_batch=mock_n_batch,
             n_hidden=10,
-            n_latent=4,
+            n_background_latent=4,
+            n_salient_latent=4,
             n_layers=2,
             use_observed_lib_size=False,
             library_log_means=mock_library_log_means,
@@ -142,7 +144,8 @@ class TestContrastiveVIModuleInference:
             )
         )
         batch_size = inference_input["x"].shape[0]
-        n_latent = mock_contrastive_vi_module.n_latent
+        n_background_latent = mock_contrastive_vi_module.n_background_latent
+        n_salient_latent = mock_contrastive_vi_module.n_salient_latent
 
         inference_outputs = mock_contrastive_vi_module._generic_inference(
             **inference_input, n_samples=n_samples
@@ -151,18 +154,24 @@ class TestContrastiveVIModuleInference:
             assert key in inference_outputs.keys()
 
         if n_samples > 1:
-            expected_latent_shape = (n_samples, batch_size, n_latent)
+            expected_background_latent_shape = (
+                n_samples,
+                batch_size,
+                n_background_latent,
+            )
+            expected_salient_latent_shape = (n_samples, batch_size, n_salient_latent)
             expected_library_shape = (n_samples, batch_size, 1)
         else:
-            expected_latent_shape = (batch_size, n_latent)
+            expected_background_latent_shape = (batch_size, n_background_latent)
+            expected_salient_latent_shape = (batch_size, n_salient_latent)
             expected_library_shape = (batch_size, 1)
 
-        assert inference_outputs["z"].shape == expected_latent_shape
-        assert inference_outputs["qz_m"].shape == expected_latent_shape
-        assert inference_outputs["qz_v"].shape == expected_latent_shape
-        assert inference_outputs["s"].shape == expected_latent_shape
-        assert inference_outputs["qs_m"].shape == expected_latent_shape
-        assert inference_outputs["qs_v"].shape == expected_latent_shape
+        assert inference_outputs["z"].shape == expected_background_latent_shape
+        assert inference_outputs["qz_m"].shape == expected_background_latent_shape
+        assert inference_outputs["qz_v"].shape == expected_background_latent_shape
+        assert inference_outputs["s"].shape == expected_salient_latent_shape
+        assert inference_outputs["qs_m"].shape == expected_salient_latent_shape
+        assert inference_outputs["qs_v"].shape == expected_salient_latent_shape
         assert inference_outputs["library"].shape == expected_library_shape
         assert (
             inference_outputs["ql_m"] is None
@@ -226,11 +235,10 @@ class TestContrastiveVIModuleGenerative:
         z = generative_input["z"]
         s = generative_input["s"]
         library = generative_input["library"]
-        n_latent = mock_contrastive_vi_module.n_latent
         batch_size = z.shape[0]
 
-        assert z.shape == (batch_size, n_latent)
-        assert s.shape == (batch_size, n_latent)
+        assert z.shape == (batch_size, mock_contrastive_vi_module.n_background_latent)
+        assert s.shape == (batch_size, mock_contrastive_vi_module.n_salient_latent)
         assert library.shape == (batch_size, 1)
 
     def test_get_generative_input(

@@ -20,7 +20,8 @@ def mock_contrastive_vi_model(
         return ContrastiveVIModel(
             mock_adata,
             n_hidden=16,
-            n_latent=4,
+            n_background_latent=4,
+            n_salient_latent=4,
             n_layers=2,
             use_observed_lib_size=True,
         )
@@ -28,7 +29,8 @@ def mock_contrastive_vi_model(
         return ContrastiveVIModel(
             mock_adata,
             n_hidden=16,
-            n_latent=4,
+            n_background_latent=4,
+            n_salient_latent=4,
             n_layers=2,
             use_observed_lib_size=False,
         )
@@ -80,3 +82,21 @@ class TestContrastiveVIModel:
                 assert not torch.equal(
                     init_state_dict[param_key], trained_state_dict[param_key]
                 )
+
+    @pytest.mark.parametrize("representation_kind", ["background", "salient"])
+    def test_get_latent_representation(
+        self,
+        mock_contrastive_vi_model,
+        mock_adata_background_indices,
+        mock_adata_target_indices,
+        representation_kind,
+    ):
+        n_cell = mock_contrastive_vi_model.adata.n_obs
+        if representation_kind == "background":
+            n_latent = mock_contrastive_vi_model.module.n_background_latent
+        else:
+            n_latent = mock_contrastive_vi_model.module.n_salient_latent
+        representation = mock_contrastive_vi_model.get_latent_representation(
+            representation_kind=representation_kind
+        )
+        assert representation.shape == (n_cell, n_latent)
