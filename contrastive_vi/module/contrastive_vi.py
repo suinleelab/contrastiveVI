@@ -283,9 +283,26 @@ class ContrastiveVIModule(BaseModuleClass):
         target: Dict[str, torch.Tensor],
         n_samples: int = 1,
     ) -> Dict[str, Dict[str, torch.Tensor]]:
-        background_outputs = self._generic_inference(**background, n_samples=n_samples)
+        background_batch_size = background["x"].shape[0]
+        target_batch_size = target["x"].shape[0]
+        inference_input = {}
+        for key in background.keys():
+            inference_input[key] = torch.cat([background[key], target[key]], dim=0)
+        outputs = self._generic_inference(**inference_input, n_samples=n_samples)
+        batch_size_dim = 0 if n_samples == 1 else 1
+        background_outputs, target_outputs = {}, {}
+        for key in outputs.keys():
+            if outputs[key] is not None:
+                background_tensor, target_tensor = torch.split(
+                    outputs[key],
+                    [background_batch_size, target_batch_size],
+                    dim=batch_size_dim,
+                )
+            else:
+                background_tensor, target_tensor = None, None
+            background_outputs[key] = background_tensor
+            target_outputs[key] = target_tensor
         background_outputs["s"] = torch.zeros_like(background_outputs["s"])
-        target_outputs = self._generic_inference(**target, n_samples=n_samples)
         return dict(background=background_outputs, target=target_outputs)
 
     @auto_move_data
@@ -314,8 +331,33 @@ class ContrastiveVIModule(BaseModuleClass):
         background: Dict[str, torch.Tensor],
         target: Dict[str, torch.Tensor],
     ) -> Dict[str, Dict[str, torch.Tensor]]:
-        background_outputs = self._generic_generative(**background)
-        target_outputs = self._generic_generative(**target)
+        latent_z_shape = background["z"].shape
+        batch_size_dim = 0 if len(latent_z_shape) == 2 else 1
+        background_batch_size = background["z"].shape[batch_size_dim]
+        target_batch_size = target["z"].shape[batch_size_dim]
+        generative_input = {}
+        for key in ["z", "s", "library"]:
+            generative_input[key] = torch.cat(
+                [background[key], target[key]], dim=batch_size_dim
+            )
+        generative_input["batch_index"] = torch.cat(
+            [background["batch_index"], target["batch_index"]], dim=0
+        )
+        outputs = self._generic_generative(**generative_input)
+        background_outputs, target_outputs = {}, {}
+        for key in ["px_scale", "px_rate", "px_dropout"]:
+            if outputs[key] is not None:
+                background_tensor, target_tensor = torch.split(
+                    outputs[key],
+                    [background_batch_size, target_batch_size],
+                    dim=batch_size_dim,
+                )
+            else:
+                background_tensor, target_tensor = None, None
+            background_outputs[key] = background_tensor
+            target_outputs[key] = target_tensor
+        background_outputs["px_r"] = outputs["px_r"]
+        target_outputs["px_r"] = outputs["px_r"]
         return dict(background=background_outputs, target=target_outputs)
 
     @staticmethod
