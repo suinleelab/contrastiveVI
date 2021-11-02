@@ -1,3 +1,4 @@
+"""Run a model training experiment."""
 import argparse
 import os
 
@@ -37,6 +38,7 @@ parser.add_argument(
 parser.add_argument(
     "--random_seeds",
     nargs="+",
+    type=int,
     default=constants.DEFAULT_SEEDS,
     help="List of random seeds to use for experiments, with one model trained per "
     "seed.",
@@ -56,6 +58,9 @@ adata = sc.read_h5ad(
 if args.dataset == "zheng_2017":
     split_key = "condition"
     background_value = "healthy"
+elif args.dataset == "haber_2017":
+    split_key = "condition"
+    background_value = "Control"
 else:
     raise NotImplementedError("Dataset not yet implemented.")
 
@@ -87,6 +92,7 @@ for seed in args.random_seeds:
             target_indices=target_indices,
             use_gpu=use_gpu,
             early_stopping=True,
+            max_epochs=25,
         )
 
     elif args.method == "scVI":
