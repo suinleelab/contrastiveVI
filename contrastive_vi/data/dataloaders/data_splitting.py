@@ -62,6 +62,15 @@ class ContrastiveDataSplitter(pl.LightningDataModule):
     def setup(self, stage: Optional[str] = None):
         random_state = np.random.RandomState(seed=settings.seed)
 
+        target_permutation = random_state.permutation(self.target_indices)
+        n_target_train = self.n_target_train
+        n_target_val = self.n_target_val
+        self.target_val_idx = target_permutation[:n_target_val]
+        self.target_train_idx = target_permutation[
+            n_target_val : (n_target_val + n_target_train)
+        ]
+        self.target_test_idx = target_permutation[(n_target_val + n_target_train) :]
+
         background_permutation = random_state.permutation(self.background_indices)
         n_background_train = self.n_background_train
         n_background_val = self.n_background_val
@@ -72,15 +81,6 @@ class ContrastiveDataSplitter(pl.LightningDataModule):
         self.background_test_idx = background_permutation[
             (n_background_val + n_background_train) :
         ]
-
-        target_permutation = random_state.permutation(self.target_indices)
-        n_target_train = self.n_target_train
-        n_target_val = self.n_target_val
-        self.target_val_idx = target_permutation[:n_target_val]
-        self.target_train_idx = target_permutation[
-            n_target_val : (n_target_val + n_target_train)
-        ]
-        self.target_test_idx = target_permutation[(n_target_val + n_target_train) :]
 
         self.train_idx = np.concatenate(
             (self.background_train_idx, self.target_train_idx)

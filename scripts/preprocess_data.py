@@ -3,6 +3,8 @@ import argparse
 import os
 import sys
 
+import constants
+
 from contrastive_vi.data.datasets.blish_2020 import (
     download_blish_2020,
     preprocess_blish_2020,
@@ -119,13 +121,7 @@ def main():
     parser.add_argument(
         "dataset",
         type=str,
-        choices=[
-            "zheng_2017",
-            "haber_2017",
-            "blish_2020",
-            "xiang_2020",
-            "fasolino_2021",
-        ],
+        choices=constants.DATASET_LIST,
         help="Preprocess single-cell expression data from Zheng et al. 2017, Haber "
         "et al. 2017, Blish et al., 2020, Xiang et al., 2020, or Fasolino et al., 2021",
     )
