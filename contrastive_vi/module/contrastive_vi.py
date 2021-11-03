@@ -144,10 +144,10 @@ class ContrastiveVIModule(BaseModuleClass):
         return local_library_log_means, local_library_log_vars
 
     @staticmethod
-    def _get_min_batch_size(concat_tensors: Tuple[Dict[str, torch.Tensor]]) -> int:
+    def _get_min_batch_size(concat_tensors: Dict[str, Dict[str, torch.Tensor]]) -> int:
         return min(
-            concat_tensors[0][_CONSTANTS.X_KEY].shape[0],
-            concat_tensors[1][_CONSTANTS.X_KEY].shape[0],
+            concat_tensors["background"][_CONSTANTS.X_KEY].shape[0],
+            concat_tensors["target"][_CONSTANTS.X_KEY].shape[0],
         )
 
     @staticmethod
@@ -159,7 +159,7 @@ class ContrastiveVIModule(BaseModuleClass):
 
     @staticmethod
     def _get_inference_input_from_concat_tensors(
-        concat_tensors: Tuple[Dict[str, torch.Tensor]], index: int
+        concat_tensors: Dict[str, Dict[str, torch.Tensor]], index: str
     ) -> Dict[str, torch.Tensor]:
         tensors = concat_tensors[index]
         x = tensors[_CONSTANTS.X_KEY]
@@ -168,10 +168,10 @@ class ContrastiveVIModule(BaseModuleClass):
         return input_dict
 
     def _get_inference_input(
-        self, concat_tensors: Tuple[Dict[str, torch.Tensor]]
+        self, concat_tensors: Dict[str, Dict[str, torch.Tensor]]
     ) -> Dict[str, Dict[str, torch.Tensor]]:
-        background = self._get_inference_input_from_concat_tensors(concat_tensors, 0)
-        target = self._get_inference_input_from_concat_tensors(concat_tensors, 1)
+        background = self._get_inference_input_from_concat_tensors(concat_tensors, "background")
+        target = self._get_inference_input_from_concat_tensors(concat_tensors, "target")
         # Ensure batch sizes are the same.
         min_batch_size = self._get_min_batch_size(concat_tensors)
         self._reduce_tensors_to_min_batch_size(background, min_batch_size)
@@ -180,7 +180,7 @@ class ContrastiveVIModule(BaseModuleClass):
 
     @staticmethod
     def _get_generative_input_from_concat_tensors(
-        concat_tensors: Tuple[Dict[str, torch.Tensor]], index: int
+        concat_tensors: Dict[str, Dict[str, torch.Tensor]], index: str
     ) -> Dict[str, torch.Tensor]:
         tensors = concat_tensors[index]
         batch_index = tensors[_CONSTANTS.BATCH_KEY]
@@ -198,14 +198,14 @@ class ContrastiveVIModule(BaseModuleClass):
 
     def _get_generative_input(
         self,
-        concat_tensors: Tuple[Dict[str, torch.Tensor]],
+        concat_tensors: Dict[str, Dict[str, torch.Tensor]],
         inference_outputs: Dict[str, Dict[str, torch.Tensor]],
     ) -> Dict[str, Dict[str, torch.Tensor]]:
         background_tensor_input = self._get_generative_input_from_concat_tensors(
-            concat_tensors, 0
+            concat_tensors, "background"
         )
         target_tensor_input = self._get_generative_input_from_concat_tensors(
-            concat_tensors, 1
+            concat_tensors, "target"
         )
         # Ensure batch sizes are the same.
         min_batch_size = self._get_min_batch_size(concat_tensors)
@@ -494,7 +494,7 @@ class ContrastiveVIModule(BaseModuleClass):
 
     def loss(
         self,
-        concat_tensors: Tuple[Dict[str, torch.Tensor]],
+        concat_tensors: Dict[str, Dict[str, torch.Tensor]],
         inference_outputs: Dict[str, Dict[str, torch.Tensor]],
         generative_outputs: Dict[str, Dict[str, torch.Tensor]],
         kl_weight: float = 1.0,
@@ -525,8 +525,8 @@ class ContrastiveVIModule(BaseModuleClass):
                 `(batch_size, )` if number of latent samples == 1.
             kl_global: One-dimensional tensor for global KL divergence term.
         """
-        background_tensors = concat_tensors[0]
-        target_tensors = concat_tensors[1]
+        background_tensors = concat_tensors["background"]
+        target_tensors = concat_tensors["target"]
         # Ensure batch sizes are the same.
         min_batch_size = self._get_min_batch_size(concat_tensors)
         self._reduce_tensors_to_min_batch_size(background_tensors, min_batch_size)

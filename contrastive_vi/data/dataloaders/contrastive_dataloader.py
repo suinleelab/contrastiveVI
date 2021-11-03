@@ -1,16 +1,39 @@
 """Data loader for contrastive learning."""
+from itertools import cycle
 from typing import List, Optional, Union
 
 from anndata import AnnData
 from scvi.dataloaders._concat_dataloader import ConcatDataLoader
 
 
+class _ContrastiveIterator:
+    """
+    Iterator for background and target dataloader pairs as found in the contrastive
+    analysis setting.
+
+    Each iteration of this iterator returns a dictionary with two elements:
+    "background", containing one batch of data from the background dataloader, and
+    "target", containing one batch of data from the target dataloader.
+    """
+    def __init__(self, background, target):
+        self.background = iter(background)
+        self.target = iter(target)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        bg_samples = next(self.background)
+        tg_samples = next(self.target)
+        return {"background": bg_samples, "target": tg_samples}
+
+
 class ContrastiveDataLoader(ConcatDataLoader):
     """
     Data loader to load background and target data for contrastive learning.
 
-    Each iteration of the data loader returns a tuple, where the first element is the
-    background data, and the second element is the target data.
+    Each iteration of the data loader returns a dictionary containing background and
+    target data points, indexed by "background" and "target", respectively.
     Args:
     ----
         adata: AnnData object that has been registered via `setup_anndata`.
@@ -50,3 +73,18 @@ class ContrastiveDataLoader(ConcatDataLoader):
         )
         self.background_indices = background_indices
         self.target_indices = target_indices
+
+    def __iter__(self):
+        """
+
+        Iter method for conctrastive data loader.
+
+        Will iter over the dataloader with the most data while cycling through
+        the data in the other dataloaders.
+        """
+
+        iter_list = [
+            cycle(dl) if dl != self.largest_dl else dl for dl in self.dataloaders
+        ]
+
+        return _ContrastiveIterator(background=iter_list[0], target=iter_list[1])
