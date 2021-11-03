@@ -92,7 +92,7 @@ class TestContrastiveVIModuleInference:
     ):
         inference_input = (
             mock_contrastive_vi_module._get_inference_input_from_concat_tensors(
-                mock_contrastive_batch, 0
+                mock_contrastive_batch, "background"
             )
         )
         for key in required_inference_input_keys:
@@ -140,7 +140,7 @@ class TestContrastiveVIModuleInference:
     ):
         inference_input = (
             mock_contrastive_vi_module._get_inference_input_from_concat_tensors(
-                mock_contrastive_batch, 0
+                mock_contrastive_batch, "background"
             )
         )
         batch_size = inference_input["x"].shape[0]
@@ -208,7 +208,7 @@ class TestContrastiveVIModuleGenerative:
     ):
         generative_input = (
             mock_contrastive_vi_module._get_generative_input_from_concat_tensors(
-                mock_contrastive_batch, 0
+                mock_contrastive_batch, "background"
             )
         )
         for key in required_generative_input_keys_from_concat_tensors:

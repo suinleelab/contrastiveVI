@@ -23,8 +23,10 @@ class TestContrastiveDataLoader:
             shuffle=False,
         )
         batch = get_next_batch(dataloader)
-        assert type(batch) == tuple
-        assert len(batch) == 2
+        assert type(batch) == dict
+        assert len(batch.keys()) == 2
+        assert "background" in batch.keys()
+        assert "target" in batch.keys()
 
         expected_background_data = torch.Tensor(
             mock_adata.layers["raw_counts"][mock_adata_background_indices, :][
@@ -36,12 +38,13 @@ class TestContrastiveDataLoader:
                 :batch_size, :
             ]
         )
-        assert torch.equal(batch[0][_CONSTANTS.X_KEY], expected_background_data)
-        assert torch.equal(batch[1][_CONSTANTS.X_KEY], expected_target_data)
+
+        assert torch.equal(batch["background"][_CONSTANTS.X_KEY], expected_background_data)
+        assert torch.equal(batch["target"][_CONSTANTS.X_KEY], expected_target_data)
 
         assert (
-            batch[0][_CONSTANTS.BATCH_KEY] == mock_adata_background_label
+            batch["background"][_CONSTANTS.BATCH_KEY] == mock_adata_background_label
         ).sum() == batch_size
         assert (
-            batch[1][_CONSTANTS.BATCH_KEY] == mock_adata_target_label
+            batch["target"][_CONSTANTS.BATCH_KEY] == mock_adata_target_label
         ).sum() == batch_size
