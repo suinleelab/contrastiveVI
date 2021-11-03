@@ -4,8 +4,11 @@ import os
 
 import constants
 import numpy as np
+import pickle
 import scanpy as sc
 import torch
+from pcpca import PCPCA
+from sklearn.preprocessing import StandardScaler
 from scvi._settings import settings
 from scvi.model import SCVI
 
@@ -19,7 +22,7 @@ parser.add_argument(
     help="Which dataset to use for the experiment.",
 )
 parser.add_argument(
-    "method", type=str, choices=["contrastiveVI", "scVI"], help="Which model to train"
+    "method", type=str, choices=["contrastiveVI", "scVI", "PCPCA"], help="Which model to train"
 )
 parser.add_argument(
     "-use_gpu", action="store_true", help="Flag for enabling GPU usage."
@@ -72,46 +75,71 @@ if args.use_gpu:
 else:
     use_gpu = False
 
-for seed in args.random_seeds:
-    settings.seed = seed
+deep_learning_models = ["scVI", "contrastiveVI"]
 
-    if args.method == "contrastiveVI":
-        ContrastiveVIModel.setup_anndata(adata, layer="count")
+# For deep learning methods, we experiment with multiple random initializations
+# to get error bars
+if args.method in deep_learning_models:
+    for seed in args.random_seeds:
+        settings.seed = seed
 
-        model = ContrastiveVIModel(adata)
+        if args.method == "contrastiveVI":
+            ContrastiveVIModel.setup_anndata(adata, layer="count")
 
-        # np.where returns a list of indices, one for each dimension of the input array.
-        # Since we have 1d arrays, we simply grab the first (and only) returned list.
-        background_indices = np.where(adata.obs[split_key] == background_value)[0]
-        target_indices = np.where(adata.obs[split_key] != background_value)[0]
+            model = ContrastiveVIModel(adata)
 
-        model.train(
-            check_val_every_n_epoch=1,
-            train_size=0.8,
-            background_indices=background_indices,
-            target_indices=target_indices,
-            use_gpu=use_gpu,
-            early_stopping=True,
-            max_epochs=25,
+            # np.where returns a list of indices, one for each dimension of the input array.
+            # Since we have 1d arrays, we simply grab the first (and only) returned list.
+            background_indices = np.where(adata.obs[split_key] == background_value)[0]
+            target_indices = np.where(adata.obs[split_key] != background_value)[0]
+
+            model.train(
+                check_val_every_n_epoch=1,
+                train_size=0.8,
+                background_indices=background_indices,
+                target_indices=target_indices,
+                use_gpu=use_gpu,
+                early_stopping=True,
+                max_epochs=25,
+            )
+
+        elif args.method == "scVI":
+            # We only train scVI with target samples
+            target_adata = adata[adata.obs[split_key] != background_value].copy()
+
+            SCVI.setup_anndata(target_adata, layer="count")
+
+            model = SCVI(target_adata)
+
+            model.train(
+                check_val_every_n_epoch=1,
+                train_size=0.8,
+                use_gpu=use_gpu,
+                early_stopping=True,
+            )
+
+        checkpoint_dir = os.path.join(
+            constants.DEFAULT_RESULTS_PATH, args.dataset, args.method, str(seed)
         )
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        torch.save(model, os.path.join(checkpoint_dir, "model.ckpt"))
 
-    elif args.method == "scVI":
-        # We only train scVI with target samples
-        target_adata = adata[adata.obs[split_key] != background_value].copy()
+elif args.method == "PCPCA":
+    # In the original PCPCA paper they use raw count data and standardize it to 0-mean
+    # unit variance, so we do the same thing here
+    background_data = StandardScaler().fit_transform(
+        adata[adata.obs[split_key] == background_value].layers['count'])
+    target_data = StandardScaler().fit_transform(
+        adata[adata.obs[split_key] != background_value].layers['count'])
 
-        SCVI.setup_anndata(target_adata, layer="count")
+    n, m = target_data.shape[1], background_data.shape[1]
+    model = PCPCA(n_components=10, gamma=0.7)
 
-        model = SCVI(target_adata)
+    # The PCPCA package expects data to have rows be features and columns be samples
+    # so we transpose the data here
+    model.fit(target_data.transpose(), background_data.transpose())
 
-        model.train(
-            check_val_every_n_epoch=1,
-            train_size=0.8,
-            use_gpu=use_gpu,
-            early_stopping=True,
-        )
+    model_dir = os.path.join(constants.DEFAULT_RESULTS_PATH, args.dataset, args.method)
+    os.makedirs(model_dir, exist_ok=True)
+    pickle.dump(model, open(os.path.join(model_dir, "model.pkl"), 'wb'))
 
-    checkpoint_dir = os.path.join(
-        constants.DEFAULT_RESULTS_PATH, args.dataset, args.method, str(seed)
-    )
-    os.makedirs(checkpoint_dir, exist_ok=True)
-    torch.save(model, os.path.join(checkpoint_dir, "model.ckpt"))
