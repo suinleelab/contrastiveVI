@@ -1,16 +1,18 @@
 """Run a model training experiment."""
 import argparse
 import os
+import pickle
+import sys
 
 import constants
 import numpy as np
-import pickle
 import scanpy as sc
 import torch
+from contrastive import CPCA
 from pcpca import PCPCA
-from sklearn.preprocessing import StandardScaler
 from scvi._settings import settings
 from scvi.model import SCVI
+from sklearn.preprocessing import StandardScaler
 
 from contrastive_vi.model.contrastive_vi import ContrastiveVIModel
 
@@ -22,7 +24,10 @@ parser.add_argument(
     help="Which dataset to use for the experiment.",
 )
 parser.add_argument(
-    "method", type=str, choices=["contrastiveVI", "scVI", "PCPCA"], help="Which model to train"
+    "method",
+    type=str,
+    choices=["contrastiveVI", "scVI", "PCPCA", "cPCA"],
+    help="Which model to train",
 )
 parser.add_argument(
     "-use_gpu", action="store_true", help="Flag for enabling GPU usage."
@@ -48,6 +53,9 @@ parser.add_argument(
 )
 
 args = parser.parse_args()
+print(f"Running {sys.argv[0]} with arguments")
+for arg in vars(args):
+    print(f"\t{arg}={getattr(args, arg)}")
 
 adata = sc.read_h5ad(
     os.path.join(
@@ -88,8 +96,9 @@ if args.method in deep_learning_models:
 
             model = ContrastiveVIModel(adata)
 
-            # np.where returns a list of indices, one for each dimension of the input array.
-            # Since we have 1d arrays, we simply grab the first (and only) returned list.
+            # np.where returns a list of indices, one for each dimension of the input
+            # array. Since we have 1d arrays, we simply grab the first (and only)
+            # returned list.
             background_indices = np.where(adata.obs[split_key] == background_value)[0]
             target_indices = np.where(adata.obs[split_key] != background_value)[0]
 
@@ -128,18 +137,34 @@ elif args.method == "PCPCA":
     # In the original PCPCA paper they use raw count data and standardize it to 0-mean
     # unit variance, so we do the same thing here
     background_data = StandardScaler().fit_transform(
-        adata[adata.obs[split_key] == background_value].layers['count'])
+        adata[adata.obs[split_key] == background_value].layers["count"]
+    )
     target_data = StandardScaler().fit_transform(
-        adata[adata.obs[split_key] != background_value].layers['count'])
+        adata[adata.obs[split_key] != background_value].layers["count"]
+    )
 
-    n, m = target_data.shape[1], background_data.shape[1]
     model = PCPCA(n_components=10, gamma=0.7)
-
     # The PCPCA package expects data to have rows be features and columns be samples
     # so we transpose the data here
     model.fit(target_data.transpose(), background_data.transpose())
 
     model_dir = os.path.join(constants.DEFAULT_RESULTS_PATH, args.dataset, args.method)
     os.makedirs(model_dir, exist_ok=True)
-    pickle.dump(model, open(os.path.join(model_dir, "model.pkl"), 'wb'))
+    pickle.dump(model, open(os.path.join(model_dir, "model.pkl"), "wb"))
 
+elif args.method == "cPCA":
+    background_data = adata[adata.obs[split_key] == background_value].X
+    target_data = adata[adata.obs[split_key] == background_value].X
+
+    model = CPCA(n_components=10, standardize=True)
+    model.fit(
+        foreground=target_data,
+        background=background_data,
+        preprocess_with_pca_dim=args.n_genes,  # Avoid preprocessing with standard PCA.
+    )
+
+    model_dir = os.path.join(constants.DEFAULT_RESULTS_PATH, args.dataset, args.method)
+    os.makedirs(model_dir, exist_ok=True)
+    pickle.dump(model, open(os.path.join(model_dir, "model.pkl"), "wb"))
+
+print("Done!")
