@@ -1,0 +1,15 @@
+name: contrastive-vi-env
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python>=3.9
+  - pip
+  - r-base
+  - r-essentials
+  - pip:
+    - pcpca==0.4
+    - contrastive==1.1.0
+    - tensorflow==2.7.0
+    - tensorflow-probability==0.11.0
+    - git+https://github.com/andrewcharlesjones/cplvm.git@f7baf0d1370b3273234dc78bbb329a776c8f4117

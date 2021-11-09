@@ -7,8 +7,10 @@ import sys
 import constants
 import numpy as np
 import scanpy as sc
+import tensorflow as tf
 import torch
 from contrastive import CPCA
+from cplvm import CPLVM
 from pcpca import PCPCA
 from scvi._settings import settings
 from scvi.model import SCVI
@@ -26,7 +28,7 @@ parser.add_argument(
 parser.add_argument(
     "method",
     type=str,
-    choices=["contrastiveVI", "scVI", "PCPCA", "cPCA"],
+    choices=["contrastiveVI", "scVI", "PCPCA", "cPCA", "CPLVM"],
     help="Which model to train",
 )
 parser.add_argument(
@@ -75,19 +77,20 @@ elif args.dataset == "haber_2017":
 else:
     raise NotImplementedError("Dataset not yet implemented.")
 
-if args.use_gpu:
-    if args.gpu_num is not None:
-        use_gpu = args.gpu_num
-    else:
-        use_gpu = True
-else:
-    use_gpu = False
-
-deep_learning_models = ["scVI", "contrastiveVI"]
+torch_models = ["scVI", "contrastiveVI"]
+tf_models = ["CPLVM"]
 
 # For deep learning methods, we experiment with multiple random initializations
 # to get error bars
-if args.method in deep_learning_models:
+if args.method in torch_models:
+    if args.use_gpu:
+        if args.gpu_num is not None:
+            use_gpu = args.gpu_num
+        else:
+            use_gpu = True
+    else:
+        use_gpu = False
+
     for seed in args.random_seeds:
         settings.seed = seed
 
@@ -132,6 +135,44 @@ if args.method in deep_learning_models:
         )
         os.makedirs(checkpoint_dir, exist_ok=True)
         torch.save(model, os.path.join(checkpoint_dir, "model.ckpt"))
+
+elif args.method in tf_models:
+    if args.use_gpu:
+        if args.gpu_num is not None:
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu_num)
+        else:
+            os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    else:
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""  # Use CPU.
+
+    for seed in args.random_seeds:
+        tf.random.set_seed(seed)
+
+        if args.method == "CPLVM":
+            background_data = (
+                adata[adata.obs[split_key] == background_value]
+                .layers["count"]
+                .transpose()
+            )
+            target_data = (
+                adata[adata.obs[split_key] != background_value]
+                .layers["count"]
+                .transpose()
+            )
+            model = CPLVM(k_shared=10, k_foreground=10)
+            model_output = model.fit_model_vi(
+                X=background_data,
+                Y=target_data,
+                compute_size_factors=True,
+                is_H0=False,
+                offset_term=True,
+            )
+            model_output = {key: tensor.numpy() for key, tensor in model_output.items()}
+            model_dir = os.path.join(
+                constants.DEFAULT_RESULTS_PATH, args.dataset, args.method, str(seed)
+            )
+            os.makedirs(model_dir, exist_ok=True)
+            pickle.dump(model_output, open(os.path.join(model_dir, "model.pkl"), "wb"))
 
 elif args.method == "PCPCA":
     # In the original PCPCA paper they use raw count data and standardize it to 0-mean
