@@ -1,5 +1,7 @@
 Papers with methods that should be considered baselines in our paper.
 
+- Deep generative modeling for single-cell transcriptomics
+(https://www.nature.com/articles/s41592-018-0229-2)
 - Exploring patterns enriched in a dataset with contrastive principal component
 analysis (https://www.nature.com/articles/s41467-018-04608-8)
 - Contrastive Variational Autoencoder Enhances Salient Features
