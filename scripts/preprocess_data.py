@@ -17,6 +17,10 @@ from contrastive_vi.data.datasets.haber_2017 import (
     download_haber_2017,
     preprocess_haber_2017,
 )
+from contrastive_vi.data.datasets.mcfarland_2020 import (
+    download_mcfarland_2020,
+    preprocess_mcfarland_2020,
+)
 from contrastive_vi.data.datasets.xiang_2020 import (
     download_xiang_2020,
     preprocess_xiang_2020,
@@ -108,6 +112,22 @@ def download_and_preprocess_fasolino_2021(output_path: str, n_top_genes: int) ->
     save_preprocessed_adata(adata, output_path)
 
 
+def download_and_preprocess_mcfarland_2020(output_path: str, n_top_genes: int) -> None:
+    """Download, preprocess, and save data from Mcfarland et al. 2020.
+
+    Args:
+        output_path: Path to save output files.
+        n_top_genes: Number of most variable genes to retain.
+
+    Returns:
+        None. Raw Data are saved in output_path. Preprocessed data are saved
+        in a sub-directory called "preprocessed" in output_path.
+    """
+    download_mcfarland_2020(output_path)
+    adata = preprocess_mcfarland_2020(output_path, n_top_genes)
+    save_preprocessed_adata(adata, output_path)
+
+
 def main():
     """Run main function."""
     preprocess_function_dict = {
@@ -116,6 +136,7 @@ def main():
         "blish_2020": download_and_preprocess_blish_2020,
         "xiang_2020": download_and_preprocess_xiang_2020,
         "fasolino_2021": download_and_preprocess_fasolino_2021,
+        "mcfarland_2020": download_and_preprocess_mcfarland_2020,
     }
     parser = argparse.ArgumentParser(description="Preprocess data.")
     parser.add_argument(
@@ -123,7 +144,8 @@ def main():
         type=str,
         choices=constants.DATASET_LIST,
         help="Preprocess single-cell expression data from Zheng et al. 2017, Haber "
-        "et al. 2017, Blish et al., 2020, Xiang et al., 2020, or Fasolino et al., 2021",
+        "et al. 2017, Blish et al., 2020, Xiang et al., 2020, Fasolino et al., 2021, "
+        "or Mcfarland et al., 2020",
     )
     parser.add_argument(
         "--n-top-genes",
