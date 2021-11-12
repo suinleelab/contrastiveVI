@@ -74,6 +74,9 @@ if args.dataset == "zheng_2017":
 elif args.dataset == "haber_2017":
     split_key = "condition"
     background_value = "Control"
+elif args.dataset == "mcfarland_2020":
+    split_key = "condition"
+    background_value = "DMSO"
 else:
     raise NotImplementedError("Dataset not yet implemented.")
 
