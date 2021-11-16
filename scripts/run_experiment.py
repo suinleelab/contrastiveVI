@@ -17,7 +17,6 @@ from scvi.model import SCVI
 from sklearn.preprocessing import StandardScaler
 
 from contrastive_vi.model.contrastive_vi import ContrastiveVIModel
-from contrastive_vi.model.cvae import CVAEModel
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -36,7 +35,6 @@ parser.add_argument(
         "PCPCA",
         "cPCA",
         "CPLVM",
-        "cVAE",
     ],
     help="Which model to train",
 )
@@ -100,7 +98,7 @@ elif args.dataset == "mcfarland_2020":
 else:
     raise NotImplementedError("Dataset not yet implemented.")
 
-torch_models = ["scVI", "contrastiveVI", "TC_contrastiveVI", "cVAE"]
+torch_models = ["scVI", "contrastiveVI", "TC_contrastiveVI"]
 tf_models = ["CPLVM"]
 
 # For deep learning methods, we experiment with multiple random initializations
@@ -120,7 +118,9 @@ if args.method in torch_models:
         if args.method == "contrastiveVI":
             ContrastiveVIModel.setup_anndata(adata, layer="count")
 
-            model = ContrastiveVIModel(adata, disentangle=False, n_salient_latent=args.latent_size)
+            model = ContrastiveVIModel(
+                adata, disentangle=False, n_salient_latent=args.latent_size
+            )
 
             # np.where returns a list of indices, one for each dimension of the input
             # array. Since we have 1d arrays, we simply grab the first (and only)
@@ -136,6 +136,11 @@ if args.method in torch_models:
                 use_gpu=use_gpu,
                 early_stopping=True,
                 max_epochs=500,
+            )
+
+            target_adata = adata[adata.obs[split_key] != background_value].copy()
+            latent_representations = model.get_latent_representation(
+                adata=target_adata, representation_kind="salient"
             )
 
         elif args.method == "TC_contrastiveVI":
@@ -180,24 +185,6 @@ if args.method in torch_models:
             )
             latent_representations = model.get_latent_representation(adata=target_adata)
 
-        elif args.method == "cVAE":
-            CVAEModel.setup_anndata(adata)
-
-            model = CVAEModel(adata)
-
-            background_indices = np.where(adata.obs[split_key] == background_value)[0]
-            target_indices = np.where(adata.obs[split_key] != background_value)[0]
-
-            model.train(
-                check_val_every_n_epoch=1,
-                train_size=0.8,
-                background_indices=background_indices,
-                target_indices=target_indices,
-                use_gpu=use_gpu,
-                early_stopping=True,
-                max_epochs=500,
-            )
-
         results_dir = os.path.join(
             constants.DEFAULT_RESULTS_PATH,
             args.dataset,
@@ -209,7 +196,7 @@ if args.method in torch_models:
         torch.save(model, os.path.join(results_dir, "model.ckpt"), pickle_protocol=4)
         np.save(
             arr=latent_representations,
-            file=os.path.join(results_dir, "latent_representations.npy")
+            file=os.path.join(results_dir, "latent_representations.npy"),
         )
 
 elif args.method in tf_models:
@@ -260,7 +247,7 @@ elif args.method in tf_models:
             )
             np.save(
                 arr=latent_representations,
-                file=os.path.join(results_dir, "latent_representations.npy")
+                file=os.path.join(results_dir, "latent_representations.npy"),
             )
 
 elif args.method == "PCPCA":
@@ -292,7 +279,7 @@ elif args.method == "PCPCA":
     pickle.dump(model, open(os.path.join(results_dir, "model.pkl"), "wb"))
     np.save(
         arr=latent_representations,
-        file=os.path.join(results_dir, "latent_representations.npy")
+        file=os.path.join(results_dir, "latent_representations.npy"),
     )
 
 elif args.method == "cPCA":
@@ -317,7 +304,7 @@ elif args.method == "cPCA":
     pickle.dump(model, open(os.path.join(results_dir, "model.pkl"), "wb"))
     np.save(
         arr=latent_representations,
-        file=os.path.join(results_dir, "latent_representations.npy")
+        file=os.path.join(results_dir, "latent_representations.npy"),
     )
 
 print("Done!")
