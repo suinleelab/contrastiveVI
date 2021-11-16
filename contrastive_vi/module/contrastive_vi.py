@@ -4,6 +4,7 @@ from typing import Dict, Optional, Tuple
 
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from scvi import _CONSTANTS
 from scvi.distributions import ZeroInflatedNegativeBinomial
@@ -34,6 +35,7 @@ class ContrastiveVIModule(BaseModuleClass):
             Parameterize prior on library size if not using observed library size.
         library_log_vars: 1 x n_batch array of variances of the log library sizes.
             Parameterize prior on library size if not using observed library size.
+        disentangle: Whether to disentangle the salient and background latent variables.
     """
 
     def __init__(
@@ -48,6 +50,7 @@ class ContrastiveVIModule(BaseModuleClass):
         use_observed_lib_size: bool = True,
         library_log_means: Optional[np.ndarray] = None,
         library_log_vars: Optional[np.ndarray] = None,
+        disentangle: bool = False,
     ) -> None:
         super().__init__()
         self.n_input = n_input
@@ -61,6 +64,7 @@ class ContrastiveVIModule(BaseModuleClass):
         self.dispersion = "gene"
         self.px_r = torch.nn.Parameter(torch.randn(n_input))
         self.use_observed_lib_size = use_observed_lib_size
+        self.disentangle = disentangle
 
         if not self.use_observed_lib_size:
             if library_log_means is None or library_log_vars is None:
@@ -118,9 +122,9 @@ class ContrastiveVIModule(BaseModuleClass):
             var_activation=None,
         )
         # Decoder from latent variable to distribution parameters in data space.
-        n_input_decoder = n_background_latent + n_salient_latent
+        n_total_latent = n_background_latent + n_salient_latent
         self.decoder = DecoderSCVI(
-            n_input_decoder,
+            n_total_latent,
             n_input,
             n_cat_list=cat_list,
             n_layers=n_layers,
@@ -129,6 +133,9 @@ class ContrastiveVIModule(BaseModuleClass):
             use_batch_norm=True,
             use_layer_norm=False,
         )
+        # Discriminator for total correlation loss
+        if self.disentangle:
+            self.discriminator = nn.Linear(n_total_latent, 1)
 
     @auto_move_data
     def _compute_local_library_params(
@@ -170,7 +177,9 @@ class ContrastiveVIModule(BaseModuleClass):
     def _get_inference_input(
         self, concat_tensors: Dict[str, Dict[str, torch.Tensor]]
     ) -> Dict[str, Dict[str, torch.Tensor]]:
-        background = self._get_inference_input_from_concat_tensors(concat_tensors, "background")
+        background = self._get_inference_input_from_concat_tensors(
+            concat_tensors, "background"
+        )
         target = self._get_inference_input_from_concat_tensors(concat_tensors, "target")
         # Ensure batch sizes are the same.
         min_batch_size = self._get_min_batch_size(concat_tensors)
@@ -553,6 +562,36 @@ class ContrastiveVIModule(BaseModuleClass):
             + torch.sum(kl_s)
             + torch.sum(kl_library)
         )
+
+        if self.disentangle:
+            z_tar = inference_outputs["target"]["qz_m"]
+            s_tar = inference_outputs["target"]["qs_m"]
+
+            # If more than one sample, the outputs have dimension
+            # (n_samples, batch_size, n_latent). Otherwise, the outputs have dimension
+            # (batch_size, n_latent). We want to make sure that the first dimension
+            # corresponds to the batch size for total correlation estimation.
+            if len(z_tar.shape) == 3:
+                z_tar = z_tar.permute(1, 0, 2)
+                s_tar = s_tar.permute(1, 0, 2)
+            z1, z2 = torch.chunk(z_tar, 2)
+            s1, s2 = torch.chunk(s_tar, 2)
+
+            # Make sure all tensors have same number of batch samples. This is
+            # necessary e.g. if we have an odd batch size at the end of an epoch.
+            size = min(len(z1), len(z2))
+            z1, z2, s1, s2 = z1[:size], z2[:size], s1[:size], s2[:size]
+
+            q = torch.cat([torch.cat([z1, s1], dim=-1), torch.cat([z2, s2], dim=-1)])
+            q_bar = torch.cat(
+                [torch.cat([z1, s2], dim=-1), torch.cat([z2, s1], dim=-1)]
+            )
+            q_bar_score = F.sigmoid(self.discriminator(q_bar))
+            q_score = F.sigmoid(self.discriminator(q))
+            tc_loss = torch.log(q_score / (1 - q_score))
+            discriminator_loss = -torch.log(q_score) - torch.log(1 - q_bar_score)
+            loss += torch.sum(tc_loss) + torch.sum(discriminator_loss)
+
         kl_local = dict(
             kl_z=kl_z,
             kl_s=kl_s,
