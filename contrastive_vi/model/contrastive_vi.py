@@ -32,6 +32,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         dropout_rate: Dropout rate for neural networks.
         use_observed_lib_size: Use observed library size for RNA as scaling factor in
             mean of conditional distribution.
+        disentangle: Whether to disentangle the salient and background latent variables.
     """
 
     def __init__(
@@ -44,6 +45,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         n_layers: int = 1,
         dropout_rate: float = 0.1,
         use_observed_lib_size: bool = True,
+        disentangle: bool = False,
     ) -> None:
         super(ContrastiveVIModel, self).__init__(adata)
         # self.summary_stats from BaseModelClass gives info about anndata dimensions
@@ -64,6 +66,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
             use_observed_lib_size=use_observed_lib_size,
             library_log_means=library_log_means,
             library_log_vars=library_log_vars,
+            disentangle=disentangle,
         )
         self._model_summary_string = "Contrastive-VI."
         # Necessary line to get params to be used for saving and loading.
