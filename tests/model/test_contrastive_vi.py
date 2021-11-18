@@ -1,3 +1,5 @@
+import numpy as np
+import pandas as pd
 import pytest
 import torch
 
@@ -49,7 +51,7 @@ class TestContrastiveVIModel:
             target_indices=mock_adata_target_indices,
             max_epochs=10,
             batch_size=20,  # Unequal final batches to test edge case.
-            use_gpu=False
+            use_gpu=False,
         )
         trained_state_dict = copy_module_state_dict(mock_contrastive_vi_model.module)
         for param_key in mock_contrastive_vi_model.module.state_dict().keys():
@@ -86,13 +88,9 @@ class TestContrastiveVIModel:
 
     @pytest.mark.parametrize("representation_kind", ["background", "salient"])
     def test_get_latent_representation(
-        self,
-        mock_contrastive_vi_model,
-        mock_adata_background_indices,
-        mock_adata_target_indices,
-        representation_kind,
+        self, mock_contrastive_vi_model, representation_kind
     ):
-        n_cell = mock_contrastive_vi_model.adata.n_obs
+        n_cells = mock_contrastive_vi_model.adata.n_obs
         if representation_kind == "background":
             n_latent = mock_contrastive_vi_model.module.n_background_latent
         else:
@@ -100,4 +98,49 @@ class TestContrastiveVIModel:
         representation = mock_contrastive_vi_model.get_latent_representation(
             representation_kind=representation_kind
         )
-        assert representation.shape == (n_cell, n_latent)
+        assert representation.shape == (n_cells, n_latent)
+
+    @pytest.mark.parametrize("representation_kind", ["background", "salient"])
+    def test_get_normalized_expression(
+        self, mock_contrastive_vi_model, representation_kind
+    ):
+        n_samples = 50
+        n_cells = mock_contrastive_vi_model.adata.n_obs
+        n_genes = mock_contrastive_vi_model.adata.n_vars
+        one_sample_exprs = mock_contrastive_vi_model.get_normalized_expression(
+            n_samples=1, return_numpy=True
+        )
+        one_sample_exprs = one_sample_exprs[representation_kind]
+        assert type(one_sample_exprs) == np.ndarray
+        assert one_sample_exprs.shape == (n_cells, n_genes)
+
+        many_sample_exprs = mock_contrastive_vi_model.get_normalized_expression(
+            n_samples=n_samples,
+            return_mean=False,
+        )
+        many_sample_exprs = many_sample_exprs[representation_kind]
+        assert type(many_sample_exprs) == np.ndarray
+        assert many_sample_exprs.shape == (n_samples, n_cells, n_genes)
+
+        exprs_df = mock_contrastive_vi_model.get_normalized_expression(
+            n_samples=1,
+            return_numpy=False,
+        )
+        exprs_df = exprs_df[representation_kind]
+        assert type(exprs_df) == pd.DataFrame
+        assert exprs_df.shape == (n_cells, n_genes)
+
+    def test_get_normalized_expression_fold_change(self, mock_contrastive_vi_model):
+        n_samples = 50
+        n_cells = mock_contrastive_vi_model.adata.n_obs
+        n_genes = mock_contrastive_vi_model.adata.n_vars
+        one_sample_fc = mock_contrastive_vi_model.get_normalized_expression_fold_change(
+            n_samples=1
+        )
+        assert one_sample_fc.shape == (n_cells, n_genes)
+        many_sample_fc = (
+            mock_contrastive_vi_model.get_normalized_expression_fold_change(
+                n_samples=50
+            )
+        )
+        assert many_sample_fc.shape == (n_samples, n_cells, n_genes)
