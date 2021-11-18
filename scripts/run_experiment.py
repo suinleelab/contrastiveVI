@@ -100,6 +100,7 @@ else:
 
 torch_models = ["scVI", "contrastiveVI", "TC_contrastiveVI"]
 tf_models = ["CPLVM"]
+normalized_expressions = None
 
 # For deep learning methods, we experiment with multiple random initializations
 # to get error bars
@@ -137,10 +138,12 @@ if args.method in torch_models:
                 early_stopping=True,
                 max_epochs=500,
             )
-
             target_adata = adata[adata.obs[split_key] != background_value].copy()
             latent_representations = model.get_latent_representation(
                 adata=target_adata, representation_kind="salient"
+            )
+            normalized_expressions = model.get_normalized_expression(
+                adata=adata, n_samples=100
             )
 
         elif args.method == "TC_contrastiveVI":
@@ -163,7 +166,6 @@ if args.method in torch_models:
                 early_stopping=True,
                 max_epochs=500,
             )
-
             target_adata = adata[adata.obs[split_key] != background_value].copy()
             latent_representations = model.get_latent_representation(
                 adata=target_adata, representation_kind="salient"
@@ -182,6 +184,7 @@ if args.method in torch_models:
                 train_size=0.8,
                 use_gpu=use_gpu,
                 early_stopping=True,
+                max_epochs=500,
             )
             latent_representations = model.get_latent_representation(adata=target_adata)
 
@@ -198,6 +201,17 @@ if args.method in torch_models:
             arr=latent_representations,
             file=os.path.join(results_dir, "latent_representations.npy"),
         )
+        if normalized_expressions is not None:
+            background_normalized_expression = normalized_expressions["background"]
+            salient_normalized_expression = normalized_expressions["salient"]
+            np.save(
+                arr=background_normalized_expression,
+                file=os.path.join(results_dir, "background_normalized_expression.npy"),
+            )
+            np.save(
+                arr=salient_normalized_expression,
+                file=os.path.join(results_dir, "salient_normalized_expression.npy"),
+            )
 
 elif args.method in tf_models:
     if args.use_gpu:
@@ -222,7 +236,7 @@ elif args.method in tf_models:
                 .layers["count"]
                 .transpose()
             )
-            model = CPLVM(k_shared=10, k_foreground=args.latent_sizes)
+            model = CPLVM(k_shared=10, k_foreground=args.latent_size)
             model_output = model.fit_model_vi(
                 X=background_data,
                 Y=target_data,
@@ -231,7 +245,7 @@ elif args.method in tf_models:
                 offset_term=True,
             )
             model_output = {key: tensor.numpy() for key, tensor in model_output.items()}
-            latent_representations = model["qty_mean"].transpose()
+            latent_representations = model_output["qty_mean"].transpose()
 
             results_dir = os.path.join(
                 constants.DEFAULT_RESULTS_PATH,
@@ -264,9 +278,12 @@ elif args.method == "PCPCA":
     # The PCPCA package expects data to have rows be features and columns be samples
     # so we transpose the data here
     model.fit(target_data.transpose(), background_data.transpose())
+
+    # model.transform() returns a tuple of transformed target and background data (in
+    # this order).
     latent_representations = model.transform(
         target_data.transpose(), background_data.transpose()
-    )
+    )[0].transpose()
 
     results_dir = os.path.join(
         constants.DEFAULT_RESULTS_PATH,
@@ -292,7 +309,9 @@ elif args.method == "cPCA":
         background=background_data,
         preprocess_with_pca_dim=args.n_genes,  # Avoid preprocessing with standard PCA.
     )
-    latent_representations = model.transform(target_data.X, n_alphas_to_return=1)[0]
+
+    # model.transform() returns a list of transformed data for varying alpha values.
+    latent_representations = model.transform(target_data, n_alphas_to_return=1)[0]
 
     results_dir = os.path.join(
         constants.DEFAULT_RESULTS_PATH,
