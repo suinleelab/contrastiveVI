@@ -146,6 +146,11 @@ if args.method in torch_models:
                 adata=adata, n_samples=100
             )
 
+            target_adata = adata[adata.obs[split_key] != background_value].copy()
+            latent_representations = model.get_latent_representation(
+                adata=target_adata, representation_kind="salient"
+            )
+
         elif args.method == "TC_contrastiveVI":
             ContrastiveVIModel.setup_anndata(adata, layer="count")
 
@@ -196,7 +201,9 @@ if args.method in torch_models:
             str(seed),
         )
         os.makedirs(results_dir, exist_ok=True)
-        torch.save(model, os.path.join(results_dir, "model.ckpt"), pickle_protocol=4)
+        torch.save(
+            model, os.path.join(results_dir, "model.ckpt"), pickle_protocol=4
+        ) # Protocol version >= 4 is required to save large model files.
         np.save(
             arr=latent_representations,
             file=os.path.join(results_dir, "latent_representations.npy"),
