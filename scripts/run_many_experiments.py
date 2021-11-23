@@ -18,6 +18,7 @@ parser.add_argument(
         "PCPCA",
         "cPCA",
         "CPLVM",
+        "cVAE",
     ],
     help="Which model to train",
 )
