@@ -13,6 +13,8 @@ from scvi.nn import DecoderSCVI, Encoder, one_hot
 from torch.distributions import Normal
 from torch.distributions import kl_divergence as kl
 
+from contrastive_vi.module.utils import gram_matrix
+
 torch.backends.cudnn.benchmark = True
 
 
@@ -36,6 +38,12 @@ class ContrastiveVIModule(BaseModuleClass):
         library_log_vars: 1 x n_batch array of variances of the log library sizes.
             Parameterize prior on library size if not using observed library size.
         disentangle: Whether to disentangle the salient and background latent variables.
+        use_mmd: Whether to use the maximum mean discrepancy to force background latent
+            variables of the background and target dataset to follow the same
+            distribution.
+        mmd_weight: Weight of the mmd loss so the mmd loss has similar scale as the
+            other loss terms.
+        gammas: Gamma values when `use_mmd` is `True`.
     """
 
     def __init__(
@@ -51,6 +59,9 @@ class ContrastiveVIModule(BaseModuleClass):
         library_log_means: Optional[np.ndarray] = None,
         library_log_vars: Optional[np.ndarray] = None,
         disentangle: bool = False,
+        use_mmd: bool = False,
+        mmd_weight: float = 1.0,
+        gammas: Optional[np.ndarray] = None,
     ) -> None:
         super().__init__()
         self.n_input = n_input
@@ -65,6 +76,8 @@ class ContrastiveVIModule(BaseModuleClass):
         self.px_r = torch.nn.Parameter(torch.randn(n_input))
         self.use_observed_lib_size = use_observed_lib_size
         self.disentangle = disentangle
+        self.use_mmd = use_mmd
+        self.mmd_weight = mmd_weight
 
         if not self.use_observed_lib_size:
             if library_log_means is None or library_log_vars is None:
@@ -78,6 +91,11 @@ class ContrastiveVIModule(BaseModuleClass):
             self.register_buffer(
                 "library_log_vars", torch.from_numpy(library_log_vars).float()
             )
+
+        if use_mmd:
+            if gammas is None:
+                raise ValueError("If using mmd, must provide gammas.")
+            self.register_buffer("gammas", torch.from_numpy(gammas).float())
 
         cat_list = [n_batch]
         # Background encoder.
@@ -465,6 +483,15 @@ class ContrastiveVIModule(BaseModuleClass):
             kl_library = torch.zeros_like(library)
         return kl_library.sum(dim=-1)
 
+    @auto_move_data
+    def mmd_loss(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        cost = torch.mean(gram_matrix(x, x, gammas=self.gammas))
+        cost += torch.mean(gram_matrix(y, y, gammas=self.gammas))
+        cost -= 2 * torch.mean(gram_matrix(x, y, gammas=self.gammas))
+        if cost < 0:  # Handle numerical instability.
+            return torch.tensor(0)
+        return cost
+
     def _generic_loss(
         self,
         tensors: Dict[str, torch.Tensor],
@@ -591,6 +618,12 @@ class ContrastiveVIModule(BaseModuleClass):
             tc_loss = torch.log(q_score / (1 - q_score))
             discriminator_loss = -torch.log(q_score) - torch.log(1 - q_bar_score)
             loss += torch.sum(tc_loss) + torch.sum(discriminator_loss)
+
+        if self.use_mmd:
+            z_tar = inference_outputs["target"]["qz_m"]
+            z_background = inference_outputs["background"]["qz_m"]
+            mmd = self.mmd_loss(z_tar, z_background)
+            loss += self.mmd_weight * torch.sum(mmd)
 
         kl_local = dict(
             kl_z=kl_z,
