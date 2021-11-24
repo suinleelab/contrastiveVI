@@ -2,9 +2,7 @@
 import argparse
 import os
 
-import constants
-
-dataset_list = constants.DATASET_LIST
+dataset_list = ["mcfarland_2020", "zheng_2017", "haber_2017", "fasolino_2021"]
 latent_size_list = [2, 10, 32, 64]
 
 parser = argparse.ArgumentParser()
@@ -14,6 +12,7 @@ parser.add_argument(
     choices=[
         "contrastiveVI",
         "TC_contrastiveVI",
+        "mmd_contrastiveVI",
         "scVI",
         "PCPCA",
         "cPCA",
