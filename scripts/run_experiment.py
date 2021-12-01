@@ -86,18 +86,10 @@ adata = sc.read_h5ad(
     )
 )
 
-if args.dataset == "zheng_2017":
-    split_key = "condition"
-    background_value = "healthy"
-elif args.dataset == "haber_2017":
-    split_key = "condition"
-    background_value = "Control"
-elif args.dataset == "fasolino_2021":
-    split_key = "disease_state"
-    background_value = "Control"
-elif args.dataset == "mcfarland_2020":
-    split_key = "condition"
-    background_value = "DMSO"
+dataset_split_lookup = constants.DATASET_SPLIT_LOOKUP
+if args.dataset in dataset_split_lookup.keys():
+    split_key = dataset_split_lookup[args.dataset]["split_key"]
+    background_value = dataset_split_lookup[args.dataset]["background_value"]
 else:
     raise NotImplementedError("Dataset not yet implemented.")
 
