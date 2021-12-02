@@ -1,4 +1,5 @@
-"""Download, read, and preprocess Xiang et al. (2020) expression data.
+"""
+Download, read, and preprocess Xiang et al. (2020) expression data.
 
 Single-cell expression data from Xiang et al. A Single-Cell Transcriptional Roadmap
 of the Mouse and Human Lymph Node Lymphatic Vasculature. Frontiers in Cardiovascular
@@ -20,14 +21,17 @@ from contrastive_vi.data.utils import (
 
 
 def download_xiang_2020(output_path: str) -> None:
-    """For this data, due to limitations with the Chan-Zuckerberg Biohub website,
+    """
+    For this data, due to limitations with the Chan-Zuckerberg Biohub website,
     we can't download the data file programatically. Instead, this function redirects
     the user to the webpage where the file can be downloaded.
 
     Args:
+    ----
         output_path: Path where raw data file should live.
 
-    Returns:
+    Returns
+    -------
         None. This function redirects the user to the Chan-Zuckerberg Biohub to download
         the data file if it doesn't already exist.
     """
@@ -51,15 +55,19 @@ def download_xiang_2020(output_path: str) -> None:
 
 
 def read_xiang_2020(file_directory: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """Read the expression data for Xiang et al. 2020 in the given directory.
+    """
+    Read the expression data for Xiang et al. 2020 in the given directory.
 
     Args:
+    ----
         file_directory: Directory containing Xiang et al. 2020 data.
 
-    Returns: Two data frames of raw count expression data. The first contains
-    single-cell gene expression count data from mouse samples, with cell identification
-    barcodes as column names and gene IDs as indices. The second contains count data
-    from human samples with the same format.
+    Returns
+    -------
+        Two data frames of raw count expression data. The first contains
+        single-cell gene expression count data from mouse samples, with cell
+        identification barcodes as column names and gene IDs as indices. The second
+        contains count data from human samples with the same format.
     """
     mouse_df = read_seurat_raw_counts(os.path.join(file_directory, "local_mouse.rds"))
     human_df = read_seurat_raw_counts(os.path.join(file_directory, "local_human.rds"))
@@ -68,13 +76,16 @@ def read_xiang_2020(file_directory: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def preprocess_xiang_2020(download_path: str, n_top_genes: int) -> AnnData:
-    """Preprocess expression data from Xiang et al., 2020.
+    """
+    Preprocess expression data from Xiang et al., 2020.
 
     Args:
+    ----
         download_path: Path containing the downloaded Xiang et al. 2020 data files.
         n_top_genes: Number of most variable genes to retain.
 
-    Returns:
+    Returns
+    -------
         An AnnData object containing single-cell expression data. The layer
         "count" contains the count data for the most variable genes. The X
         variable contains the total-count-normalized and log-transformed data
@@ -136,4 +147,7 @@ def preprocess_xiang_2020(download_path: str, n_top_genes: int) -> AnnData:
         layer="count",
         subset=True,
     )
+    full_adata = full_adata[
+        full_adata.layers["count"].sum(1) != 0
+    ]  # Remove cells with all zeros.
     return full_adata
