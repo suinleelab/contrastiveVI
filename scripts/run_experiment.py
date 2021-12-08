@@ -17,6 +17,7 @@ from scvi.model import SCVI
 from sklearn.preprocessing import StandardScaler
 
 from contrastive_vi.model.contrastive_vi import ContrastiveVIModel
+from contrastive_vi.model.cvae import CVAEModel
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -31,10 +32,12 @@ parser.add_argument(
     choices=[
         "contrastiveVI",
         "TC_contrastiveVI",
+        "mmd_contrastiveVI",
         "scVI",
         "PCPCA",
         "cPCA",
         "CPLVM",
+        "cVAE",
     ],
     help="Which model to train",
 )
@@ -83,22 +86,20 @@ adata = sc.read_h5ad(
     )
 )
 
-if args.dataset == "zheng_2017":
-    split_key = "condition"
-    background_value = "healthy"
-elif args.dataset == "haber_2017":
-    split_key = "condition"
-    background_value = "Control"
-elif args.dataset == "fasolino_2021":
-    split_key = "disease_state"
-    background_value = "Control"
-elif args.dataset == "mcfarland_2020":
-    split_key = "condition"
-    background_value = "DMSO"
+dataset_split_lookup = constants.DATASET_SPLIT_LOOKUP
+if args.dataset in dataset_split_lookup.keys():
+    split_key = dataset_split_lookup[args.dataset]["split_key"]
+    background_value = dataset_split_lookup[args.dataset]["background_value"]
 else:
     raise NotImplementedError("Dataset not yet implemented.")
 
-torch_models = ["scVI", "contrastiveVI", "TC_contrastiveVI"]
+torch_models = [
+    "scVI",
+    "cVAE",
+    "contrastiveVI",
+    "TC_contrastiveVI",
+    "mmd_contrastiveVI",
+]
 tf_models = ["CPLVM"]
 normalized_expressions = None
 
@@ -118,9 +119,13 @@ if args.method in torch_models:
 
         if args.method == "contrastiveVI":
             ContrastiveVIModel.setup_anndata(adata, layer="count")
-
             model = ContrastiveVIModel(
-                adata, disentangle=False, n_salient_latent=args.latent_size
+                adata,
+                disentangle=False,
+                use_mmd=False,
+                n_salient_latent=args.latent_size,
+                n_background_latent=args.latent_size,
+                use_observed_lib_size=False,
             )
 
             # np.where returns a list of indices, one for each dimension of the input
@@ -128,7 +133,6 @@ if args.method in torch_models:
             # returned list.
             background_indices = np.where(adata.obs[split_key] == background_value)[0]
             target_indices = np.where(adata.obs[split_key] != background_value)[0]
-
             model.train(
                 check_val_every_n_epoch=1,
                 train_size=0.8,
@@ -148,15 +152,102 @@ if args.method in torch_models:
 
         elif args.method == "TC_contrastiveVI":
             ContrastiveVIModel.setup_anndata(adata, layer="count")
-
-            model = ContrastiveVIModel(adata, disentangle=True)
+            model = ContrastiveVIModel(
+                adata,
+                disentangle=True,
+                use_mmd=False,
+                n_salient_latent=args.latent_size,
+                n_background_latent=args.latent_size,
+                use_observed_lib_size=False,
+            )
 
             # np.where returns a list of indices, one for each dimension of the input
             # array. Since we have 1d arrays, we simply grab the first (and only)
             # returned list.
             background_indices = np.where(adata.obs[split_key] == background_value)[0]
             target_indices = np.where(adata.obs[split_key] != background_value)[0]
+            model.train(
+                check_val_every_n_epoch=1,
+                train_size=0.8,
+                background_indices=background_indices,
+                target_indices=target_indices,
+                use_gpu=use_gpu,
+                early_stopping=True,
+                max_epochs=500,
+            )
+            target_adata = adata[adata.obs[split_key] != background_value].copy()
+            latent_representations = model.get_latent_representation(
+                adata=target_adata, representation_kind="salient"
+            )
+            normalized_expressions = model.get_normalized_expression(
+                adata=adata, n_samples=100
+            )
 
+        elif args.method == "mmd_contrastiveVI":
+            ContrastiveVIModel.setup_anndata(adata, layer="count")
+            gammas = np.array([10 ** x for x in range(-6, 7, 1)])
+            model = ContrastiveVIModel(
+                adata,
+                disentangle=False,
+                use_mmd=True,
+                gammas=gammas,
+                mmd_weight=10000,
+                n_salient_latent=args.latent_size,
+                n_background_latent=args.latent_size,
+                use_observed_lib_size=False,
+            )
+
+            # np.where returns a list of indices, one for each dimension of the input
+            # array. Since we have 1d arrays, we simply grab the first (and only)
+            # returned list.
+            background_indices = np.where(adata.obs[split_key] == background_value)[0]
+            target_indices = np.where(adata.obs[split_key] != background_value)[0]
+            model.train(
+                check_val_every_n_epoch=1,
+                train_size=0.8,
+                background_indices=background_indices,
+                target_indices=target_indices,
+                use_gpu=use_gpu,
+                early_stopping=True,
+                max_epochs=500,
+            )
+            target_adata = adata[adata.obs[split_key] != background_value].copy()
+            latent_representations = model.get_latent_representation(
+                adata=target_adata, representation_kind="salient"
+            )
+            normalized_expressions = model.get_normalized_expression(
+                adata=adata, n_samples=100
+            )
+
+        elif args.method == "scVI":
+            # We only train scVI with target samples
+            target_adata = adata[adata.obs[split_key] != background_value].copy()
+            SCVI.setup_anndata(target_adata, layer="count")
+            model = SCVI(
+                target_adata, n_latent=args.latent_size, use_observed_lib_size=False
+            )
+            model.train(
+                check_val_every_n_epoch=1,
+                train_size=0.8,
+                use_gpu=use_gpu,
+                early_stopping=True,
+                max_epochs=500,
+            )
+            latent_representations = model.get_latent_representation(adata=target_adata)
+
+        elif args.method == "cVAE":
+            CVAEModel.setup_anndata(adata)
+            model = CVAEModel(
+                adata,
+                n_salient_latent=args.latent_size,
+                n_background_latent=args.latent_size,
+            )
+
+            # np.where returns a list of indices, one for each dimension of the input
+            # array. Since we have 1d arrays, we simply grab the first (and only)
+            # returned list.
+            background_indices = np.where(adata.obs[split_key] == background_value)[0]
+            target_indices = np.where(adata.obs[split_key] != background_value)[0]
             model.train(
                 check_val_every_n_epoch=1,
                 train_size=0.8,
@@ -171,23 +262,6 @@ if args.method in torch_models:
                 adata=target_adata, representation_kind="salient"
             )
 
-        elif args.method == "scVI":
-            # We only train scVI with target samples
-            target_adata = adata[adata.obs[split_key] != background_value].copy()
-
-            SCVI.setup_anndata(target_adata, layer="count")
-
-            model = SCVI(target_adata, n_latent=args.latent_size)
-
-            model.train(
-                check_val_every_n_epoch=1,
-                train_size=0.8,
-                use_gpu=use_gpu,
-                early_stopping=True,
-                max_epochs=500,
-            )
-            latent_representations = model.get_latent_representation(adata=target_adata)
-
         results_dir = os.path.join(
             constants.DEFAULT_RESULTS_PATH,
             args.dataset,
@@ -196,7 +270,9 @@ if args.method in torch_models:
             str(seed),
         )
         os.makedirs(results_dir, exist_ok=True)
-        torch.save(model, os.path.join(results_dir, "model.ckpt"), pickle_protocol=4)
+        torch.save(
+            model, os.path.join(results_dir, "model.ckpt"), pickle_protocol=4
+        )  # Protocol version >= 4 is required to save large model files.
         np.save(
             arr=latent_representations,
             file=os.path.join(results_dir, "latent_representations.npy"),
@@ -236,7 +312,7 @@ elif args.method in tf_models:
                 .layers["count"]
                 .transpose()
             )
-            model = CPLVM(k_shared=10, k_foreground=args.latent_size)
+            model = CPLVM(k_shared=args.latent_size, k_foreground=args.latent_size)
             model_output = model.fit_model_vi(
                 X=background_data,
                 Y=target_data,
@@ -301,7 +377,7 @@ elif args.method == "PCPCA":
 
 elif args.method == "cPCA":
     background_data = adata[adata.obs[split_key] == background_value].X
-    target_data = adata[adata.obs[split_key] == background_value].X
+    target_data = adata[adata.obs[split_key] != background_value].X
 
     model = CPCA(n_components=args.latent_size, standardize=True)
     model.fit(

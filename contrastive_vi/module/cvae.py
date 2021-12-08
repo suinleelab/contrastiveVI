@@ -1,26 +1,23 @@
 """PyTorch module for Contrastive VI for single cell expression data."""
 
-from typing import Dict, Optional, Tuple
+from typing import Dict
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from scvi import _CONSTANTS
-from scvi.distributions import ZeroInflatedNegativeBinomial
 from scvi.module.base import BaseModuleClass, LossRecorder, auto_move_data
-from scvi.nn import DecoderSCVI, Encoder, one_hot
+from scvi.nn import Decoder, Encoder
 from torch.distributions import Normal
 from torch.distributions import kl_divergence as kl
-
-from contrastive_vi.module.utils import gram_matrix
+from math import floor, ceil
 
 torch.backends.cudnn.benchmark = True
 
 
-class ContrastiveVIModule(BaseModuleClass):
+class CVAEModule(BaseModuleClass):
     """
-    PyTorch module for Contrastive VI (Variational Inference).
+    PyTorch module for cVAE.
 
     Args:
     ----
@@ -31,19 +28,6 @@ class ContrastiveVIModule(BaseModuleClass):
         n_salient_latent: Dimensionality of the salient latent space.
         n_layers: Number of hidden layers used for encoder and decoder NNs.
         dropout_rate: Dropout rate for neural networks.
-        use_observed_lib_size: Use observed library size for RNA as scaling factor in
-            mean of conditional distribution.
-        library_log_means: 1 x n_batch array of means of the log library sizes.
-            Parameterize prior on library size if not using observed library size.
-        library_log_vars: 1 x n_batch array of variances of the log library sizes.
-            Parameterize prior on library size if not using observed library size.
-        disentangle: Whether to disentangle the salient and background latent variables.
-        use_mmd: Whether to use the maximum mean discrepancy to force background latent
-            variables of the background and target dataset to follow the same
-            distribution.
-        mmd_weight: Weight of the mmd loss so the mmd loss has similar scale as the
-            other loss terms.
-        gammas: Gamma values when `use_mmd` is `True`.
     """
 
     def __init__(
@@ -55,13 +39,6 @@ class ContrastiveVIModule(BaseModuleClass):
         n_salient_latent: int = 10,
         n_layers: int = 1,
         dropout_rate: float = 0.1,
-        use_observed_lib_size: bool = True,
-        library_log_means: Optional[np.ndarray] = None,
-        library_log_vars: Optional[np.ndarray] = None,
-        disentangle: bool = False,
-        use_mmd: bool = False,
-        mmd_weight: float = 1.0,
-        gammas: Optional[np.ndarray] = None,
     ) -> None:
         super().__init__()
         self.n_input = n_input
@@ -72,30 +49,6 @@ class ContrastiveVIModule(BaseModuleClass):
         self.n_layers = n_layers
         self.dropout_rate = dropout_rate
         self.latent_distribution = "normal"
-        self.dispersion = "gene"
-        self.px_r = torch.nn.Parameter(torch.randn(n_input))
-        self.use_observed_lib_size = use_observed_lib_size
-        self.disentangle = disentangle
-        self.use_mmd = use_mmd
-        self.mmd_weight = mmd_weight
-
-        if not self.use_observed_lib_size:
-            if library_log_means is None or library_log_vars is None:
-                raise ValueError(
-                    "If not using observed_lib_size, "
-                    "must provide library_log_means and library_log_vars."
-                )
-            self.register_buffer(
-                "library_log_means", torch.from_numpy(library_log_means).float()
-            )
-            self.register_buffer(
-                "library_log_vars", torch.from_numpy(library_log_vars).float()
-            )
-
-        if use_mmd:
-            if gammas is None:
-                raise ValueError("If using mmd, must provide gammas.")
-            self.register_buffer("gammas", torch.from_numpy(gammas).float())
 
         cat_list = [n_batch]
         # Background encoder.
@@ -126,23 +79,14 @@ class ContrastiveVIModule(BaseModuleClass):
             use_layer_norm=False,
             var_activation=None,
         )
-        # Library size encoder.
-        self.l_encoder = Encoder(
-            n_input,
-            1,
-            n_layers=1,
-            n_cat_list=cat_list,
-            n_hidden=n_hidden,
-            dropout_rate=dropout_rate,
-            inject_covariates=True,
-            use_batch_norm=True,
-            use_layer_norm=False,
-            var_activation=None,
-        )
+
+
         # Decoder from latent variable to distribution parameters in data space.
-        n_total_latent = n_background_latent + n_salient_latent
-        self.decoder = DecoderSCVI(
-            n_total_latent,
+        total_latent_size = n_background_latent + n_salient_latent
+        self.discriminator = nn.Linear(total_latent_size, 1)
+
+        self.decoder = Decoder(
+            total_latent_size,
             n_input,
             n_cat_list=cat_list,
             n_layers=n_layers,
@@ -151,22 +95,6 @@ class ContrastiveVIModule(BaseModuleClass):
             use_batch_norm=True,
             use_layer_norm=False,
         )
-        # Discriminator for total correlation loss
-        if self.disentangle:
-            self.discriminator = nn.Linear(n_total_latent, 1)
-
-    @auto_move_data
-    def _compute_local_library_params(
-        self, batch_index: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        n_batch = self.library_log_means.shape[1]
-        local_library_log_means = F.linear(
-            one_hot(batch_index, n_batch), self.library_log_means
-        )
-        local_library_log_vars = F.linear(
-            one_hot(batch_index, n_batch), self.library_log_vars
-        )
-        return local_library_log_means, local_library_log_vars
 
     @staticmethod
     def _get_min_batch_size(concat_tensors: Dict[str, Dict[str, torch.Tensor]]) -> int:
@@ -195,9 +123,7 @@ class ContrastiveVIModule(BaseModuleClass):
     def _get_inference_input(
         self, concat_tensors: Dict[str, Dict[str, torch.Tensor]]
     ) -> Dict[str, Dict[str, torch.Tensor]]:
-        background = self._get_inference_input_from_concat_tensors(
-            concat_tensors, "background"
-        )
+        background = self._get_inference_input_from_concat_tensors(concat_tensors, "background")
         target = self._get_inference_input_from_concat_tensors(concat_tensors, "target")
         # Ensure batch sizes are the same.
         min_batch_size = self._get_min_batch_size(concat_tensors)
@@ -220,8 +146,7 @@ class ContrastiveVIModule(BaseModuleClass):
     ) -> Dict[str, torch.Tensor]:
         z = inference_outputs[data_source]["z"]
         s = inference_outputs[data_source]["s"]
-        library = inference_outputs[data_source]["library"]
-        return dict(z=z, s=s, library=library)
+        return dict(z=z, s=s)
 
     def _get_generative_input(
         self,
@@ -263,17 +188,9 @@ class ContrastiveVIModule(BaseModuleClass):
         n_samples: int = 1,
     ) -> Dict[str, torch.Tensor]:
         x_ = x
-        if self.use_observed_lib_size:
-            library = torch.log(x.sum(1)).unsqueeze(1)
-        x_ = torch.log(1 + x_)
 
         qz_m, qz_v, z = self.z_encoder(x_, batch_index)
         qs_m, qs_v, s = self.s_encoder(x_, batch_index)
-
-        ql_m, ql_v = None, None
-        if not self.use_observed_lib_size:
-            ql_m, ql_v, library_encoded = self.l_encoder(x_, batch_index)
-            library = library_encoded
 
         if n_samples > 1:
             qz_m = self._reshape_tensor_for_samples(qz_m, n_samples)
@@ -283,13 +200,6 @@ class ContrastiveVIModule(BaseModuleClass):
             qs_v = self._reshape_tensor_for_samples(qs_v, n_samples)
             s = self._reshape_tensor_for_samples(s, n_samples)
 
-            if self.use_observed_lib_size:
-                library = self._reshape_tensor_for_samples(library, n_samples)
-            else:
-                ql_m = self._reshape_tensor_for_samples(ql_m, n_samples)
-                ql_v = self._reshape_tensor_for_samples(ql_v, n_samples)
-                library = Normal(ql_m, ql_v.sqrt()).sample()
-
         outputs = dict(
             z=z,
             qz_m=qz_m,
@@ -297,9 +207,6 @@ class ContrastiveVIModule(BaseModuleClass):
             s=s,
             qs_m=qs_m,
             qs_v=qs_v,
-            library=library,
-            ql_m=ql_m,
-            ql_v=ql_v,
         )
         return outputs
 
@@ -337,19 +244,15 @@ class ContrastiveVIModule(BaseModuleClass):
         self,
         z: torch.Tensor,
         s: torch.Tensor,
-        library: torch.Tensor,
         batch_index: torch.Tensor,
     ) -> Dict[str, torch.Tensor]:
         latent = torch.cat([z, s], dim=-1)
-        px_scale, px_r, px_rate, px_dropout = self.decoder(
-            self.dispersion,
+        p_m, p_v = self.decoder(
             latent,
-            library,
             batch_index,
         )
-        px_r = torch.exp(self.px_r)
         return dict(
-            px_scale=px_scale, px_r=px_r, px_rate=px_rate, px_dropout=px_dropout
+            p_m=p_m, p_v=p_v
         )
 
     @auto_move_data
@@ -363,7 +266,7 @@ class ContrastiveVIModule(BaseModuleClass):
         background_batch_size = background["z"].shape[batch_size_dim]
         target_batch_size = target["z"].shape[batch_size_dim]
         generative_input = {}
-        for key in ["z", "s", "library"]:
+        for key in ["z", "s"]:
             generative_input[key] = torch.cat(
                 [background[key], target[key]], dim=batch_size_dim
             )
@@ -372,37 +275,28 @@ class ContrastiveVIModule(BaseModuleClass):
         )
         outputs = self._generic_generative(**generative_input)
         background_outputs, target_outputs = {}, {}
-        for key in ["px_scale", "px_rate", "px_dropout"]:
-            if outputs[key] is not None:
-                background_tensor, target_tensor = torch.split(
-                    outputs[key],
-                    [background_batch_size, target_batch_size],
-                    dim=batch_size_dim,
-                )
-            else:
-                background_tensor, target_tensor = None, None
+        for key in ["p_m", "p_v"]:
+            background_tensor, target_tensor = torch.split(
+                outputs[key],
+                [background_batch_size, target_batch_size],
+                dim=batch_size_dim,
+            )
             background_outputs[key] = background_tensor
             target_outputs[key] = target_tensor
-        background_outputs["px_r"] = outputs["px_r"]
-        target_outputs["px_r"] = outputs["px_r"]
         return dict(background=background_outputs, target=target_outputs)
 
     @staticmethod
     def reconstruction_loss(
         x: torch.Tensor,
-        px_rate: torch.Tensor,
-        px_r: torch.Tensor,
-        px_dropout: torch.Tensor,
+        p_m: torch.Tensor
     ) -> torch.Tensor:
         """
-        Compute likelihood loss for zero-inflated negative binomial distribution.
+        Compute likelihood loss for Gaussian distribution.
 
         Args:
         ----
             x: Input data.
-            px_rate: Mean of distribution.
-            px_r: Inverse dispersion.
-            px_dropout: Logits scale of zero inflation probability.
+            p_m: Reconstructed data from decoder network
 
         Returns
         -------
@@ -410,11 +304,7 @@ class ContrastiveVIModule(BaseModuleClass):
             of latent samples == 1, the tensor has shape `(batch_size, )`. If number
             of latent samples > 1, the tensor has shape `(n_samples, batch_size)`.
         """
-        recon_loss = (
-            -ZeroInflatedNegativeBinomial(mu=px_rate, theta=px_r, zi_logits=px_dropout)
-            .log_prob(x)
-            .sum(dim=-1)
-        )
+        recon_loss = F.mse_loss(p_m, x, reduction='none').sum(dim=-1)
         return recon_loss
 
     @staticmethod
@@ -444,54 +334,6 @@ class ContrastiveVIModule(BaseModuleClass):
             Normal(prior_mean, prior_var.sqrt()),
         ).sum(dim=-1)
 
-    def library_kl_divergence(
-        self,
-        batch_index: torch.Tensor,
-        variational_library_mean: torch.Tensor,
-        variational_library_var: torch.Tensor,
-        library: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Compute KL divergence between library size variational posterior and prior.
-
-        Both the variational posterior and prior are Log-Normal.
-        Args:
-        ----
-            batch_index: Batch indices for batch-specific library size mean and
-                variance.
-            variational_library_mean: Mean of variational Log-Normal.
-            variational_library_var: Variance of variational Log-Normal.
-            library: Sampled library size.
-
-        Returns
-        -------
-            KL divergence for each data point. If number of latent samples == 1,
-            the tensor has shape `(batch_size, )`. If number of latent
-            samples > 1, the tensor has shape `(n_samples, batch_size)`.
-        """
-        if not self.use_observed_lib_size:
-            (
-                local_library_log_means,
-                local_library_log_vars,
-            ) = self._compute_local_library_params(batch_index)
-
-            kl_library = kl(
-                Normal(variational_library_mean, variational_library_var.sqrt()),
-                Normal(local_library_log_means, local_library_log_vars.sqrt()),
-            )
-        else:
-            kl_library = torch.zeros_like(library)
-        return kl_library.sum(dim=-1)
-
-    @auto_move_data
-    def mmd_loss(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        cost = torch.mean(gram_matrix(x, x, gammas=self.gammas))
-        cost += torch.mean(gram_matrix(y, y, gammas=self.gammas))
-        cost -= 2 * torch.mean(gram_matrix(x, y, gammas=self.gammas))
-        if cost < 0:  # Handle numerical instability.
-            return torch.tensor(0)
-        return cost
-
     def _generic_loss(
         self,
         tensors: Dict[str, torch.Tensor],
@@ -505,27 +347,20 @@ class ContrastiveVIModule(BaseModuleClass):
         qz_v = inference_outputs["qz_v"]
         qs_m = inference_outputs["qs_m"]
         qs_v = inference_outputs["qs_v"]
-        library = inference_outputs["library"]
-        ql_m = inference_outputs["ql_m"]
-        ql_v = inference_outputs["ql_v"]
-        px_rate = generative_outputs["px_rate"]
-        px_r = generative_outputs["px_r"]
-        px_dropout = generative_outputs["px_dropout"]
+        p_m = generative_outputs["p_m"]
 
         prior_z_m = torch.zeros_like(qz_m)
         prior_z_v = torch.ones_like(qz_v)
         prior_s_m = torch.zeros_like(qs_m)
         prior_s_v = torch.ones_like(qs_v)
 
-        recon_loss = self.reconstruction_loss(x, px_rate, px_r, px_dropout)
+        recon_loss = self.reconstruction_loss(x, p_m)
         kl_z = self.latent_kl_divergence(qz_m, qz_v, prior_z_m, prior_z_v)
         kl_s = self.latent_kl_divergence(qs_m, qs_v, prior_s_m, prior_s_v)
-        kl_library = self.library_kl_divergence(batch_index, ql_m, ql_v, library)
         return dict(
             recon_loss=recon_loss,
             kl_z=kl_z,
             kl_s=kl_s,
-            kl_library=kl_library,
         )
 
     def loss(
@@ -581,54 +416,43 @@ class ContrastiveVIModule(BaseModuleClass):
         recon_loss = background_losses["recon_loss"] + target_losses["recon_loss"]
         kl_z = background_losses["kl_z"] + target_losses["kl_z"]
         kl_s = target_losses["kl_s"]
-        kl_library = background_losses["kl_library"] + target_losses["kl_library"]
+
+        z_tar = inference_outputs["target"]["qz_m"]
+        s_tar = inference_outputs["target"]["qs_m"]
+
+        if len(z_tar.shape) == 3:
+            z_tar = z_tar.permute(1, 0, 2)  # Make mini-batch the zeroth index
+            s_tar = s_tar.permute(1, 0, 2)
+
+        z1, z2 = torch.chunk(z_tar, 2)
+        s1, s2 = torch.chunk(s_tar, 2)
+
+        # Need to make sure that all tensors have same number of samples.
+        # (This is necessary e.g. if we have an odd batch size at the end of an epoch)
+        size = min(len(z1), len(z2))
+        z1, z2, s1, s2 = z1[:size], z2[:size], s1[:size], s2[:size]
+
+        q = torch.cat([torch.cat([z1, s1], dim=-1), torch.cat([z2, s2], dim=-1)])
+        q_bar = torch.cat(
+            [torch.cat([z1, s2], dim=-1), torch.cat([z2, s1], dim=-1)]
+        )
+
+        q_bar_score = F.sigmoid(self.discriminator(q_bar))
+        q_score = F.sigmoid(self.discriminator(q))
+
+        tc_loss = torch.log(q_score / (1 - q_score))
+        discriminator_loss = (- torch.log(q_score) - torch.log(1 - q_bar_score))
 
         loss = (
             torch.sum(recon_loss)
             + torch.sum(kl_z)
             + torch.sum(kl_s)
-            + torch.sum(kl_library)
+            + torch.sum(tc_loss)
+            + torch.sum(discriminator_loss)
         )
-
-        if self.disentangle:
-            z_tar = inference_outputs["target"]["qz_m"]
-            s_tar = inference_outputs["target"]["qs_m"]
-
-            # If more than one sample, the outputs have dimension
-            # (n_samples, batch_size, n_latent). Otherwise, the outputs have dimension
-            # (batch_size, n_latent). We want to make sure that the first dimension
-            # corresponds to the batch size for total correlation estimation.
-            if len(z_tar.shape) == 3:
-                z_tar = z_tar.permute(1, 0, 2)
-                s_tar = s_tar.permute(1, 0, 2)
-            z1, z2 = torch.chunk(z_tar, 2)
-            s1, s2 = torch.chunk(s_tar, 2)
-
-            # Make sure all tensors have same number of batch samples. This is
-            # necessary e.g. if we have an odd batch size at the end of an epoch.
-            size = min(len(z1), len(z2))
-            z1, z2, s1, s2 = z1[:size], z2[:size], s1[:size], s2[:size]
-
-            q = torch.cat([torch.cat([z1, s1], dim=-1), torch.cat([z2, s2], dim=-1)])
-            q_bar = torch.cat(
-                [torch.cat([z1, s2], dim=-1), torch.cat([z2, s1], dim=-1)]
-            )
-            q_bar_score = F.sigmoid(self.discriminator(q_bar))
-            q_score = F.sigmoid(self.discriminator(q))
-            tc_loss = torch.log(q_score / (1 - q_score))
-            discriminator_loss = -torch.log(q_score) - torch.log(1 - q_bar_score)
-            loss += torch.sum(tc_loss) + torch.sum(discriminator_loss)
-
-        if self.use_mmd:
-            z_tar = inference_outputs["target"]["qz_m"]
-            z_background = inference_outputs["background"]["qz_m"]
-            mmd = self.mmd_loss(z_tar, z_background)
-            loss += self.mmd_weight * torch.sum(mmd)
-
         kl_local = dict(
             kl_z=kl_z,
             kl_s=kl_s,
-            kl_library=kl_library,
         )
         kl_global = torch.tensor(0.0)
         return LossRecorder(loss, recon_loss, kl_local, kl_global)

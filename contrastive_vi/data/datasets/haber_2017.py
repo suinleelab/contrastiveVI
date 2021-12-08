@@ -1,4 +1,5 @@
-"""Download, read, and preprocess Haber et al. (2017) expression data.
+"""
+Download, read, and preprocess Haber et al. (2017) expression data.
 
 Single-cell expression data from Haber et al. A single-cell survey of the small
 intestinal epithelium. Nature (2017).
@@ -14,13 +15,16 @@ from contrastive_vi.data.utils import download_binary_file
 
 
 def download_haber_2017(output_path: str) -> None:
-    """Download Haber et al. 2017 data from the hosting URLs.
+    """
+    Download Haber et al. 2017 data from the hosting URLs.
 
     Args:
+    ----
         output_path: Output path to store the downloaded and unzipped
         directories.
 
-    Returns:
+    Returns
+    -------
         None. File directories are downloaded to output_path.
     """
 
@@ -35,12 +39,15 @@ def download_haber_2017(output_path: str) -> None:
 
 
 def read_haber_2017(file_directory: str) -> pd.DataFrame:
-    """Read the expression data for Download Haber et al. 2017 the given directory.
+    """
+    Read the expression data for Download Haber et al. 2017 the given directory.
 
     Args:
+    ----
         file_directory: Directory containing Haber et al. 2017 data.
 
-    Returns:
+    Returns
+    -------
         A data frame containing single-cell gene expression count, with cell
         identification barcodes as column names and gene IDs as indices.
     """
@@ -54,13 +61,16 @@ def read_haber_2017(file_directory: str) -> pd.DataFrame:
 
 
 def preprocess_haber_2017(download_path: str, n_top_genes: int) -> AnnData:
-    """Preprocess expression data from Haber et al. 2017.
+    """
+    Preprocess expression data from Haber et al. 2017.
 
     Args:
+    ----
         download_path: Path containing the downloaded Haber et al. 2017 data file.
         n_top_genes: Number of most variable genes to retain.
 
-    Returns:
+    Returns
+    -------
         An AnnData object containing single-cell expression data. The layer
         "count" contains the count data for the most variable genes. The X
         variable contains the total-count-normalized and log-transformed data
@@ -101,4 +111,5 @@ def preprocess_haber_2017(download_path: str, n_top_genes: int) -> AnnData:
     sc.pp.highly_variable_genes(
         adata, flavor="seurat_v3", n_top_genes=n_top_genes, layer="count", subset=True
     )
+    adata = adata[adata.layers["count"].sum(1) != 0]  # Remove cells with all zeros.
     return adata

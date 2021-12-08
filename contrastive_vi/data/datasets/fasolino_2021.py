@@ -1,4 +1,5 @@
-"""Download, read, and preprocess Fasolino et al. (2021) expression data.
+"""
+Download, read, and preprocess Fasolino et al. (2021) expression data.
 
 Single-cell expression data from Fasolino et al. Multiomics single-cell analysis of
 human pancreatic islets reveals novel cellular states in health and type 1 diabetes.
@@ -18,14 +19,17 @@ from contrastive_vi.data.utils import (
 
 
 def download_fasolino_2021(output_path: str) -> None:
-    """For this data, due to limitations with the Chan-Zuckerberg Biohub website,
+    """
+    For this data, due to limitations with the Chan-Zuckerberg Biohub website,
     we can't download the data file programatically. Instead, this function redirects
     the user to the webpage where the file can be downloaded.
 
     Args:
+    ----
         output_path: Path where raw data file should live.
 
-    Returns:
+    Returns
+    -------
         None. This function redirects the user to the Chan-Zuckerberg Biohub to download
         the data file if it doesn't already exist.
     """
@@ -39,12 +43,15 @@ def download_fasolino_2021(output_path: str) -> None:
 
 
 def read_fasolino_2021(file_directory: str) -> pd.DataFrame:
-    """Read the expression data for Fasolino et al. 2021 in the given directory.
+    """
+    Read the expression data for Fasolino et al. 2021 in the given directory.
 
     Args:
+    ----
         file_directory: Directory containing Fasolino et al. 2021 data.
 
-    Returns:
+    Returns
+    -------
         A data frame containing single-cell gene expression count, with cell
         identification barcodes as column names and gene IDs as indices.
     """
@@ -53,13 +60,16 @@ def read_fasolino_2021(file_directory: str) -> pd.DataFrame:
 
 
 def preprocess_fasolino_2021(download_path: str, n_top_genes: int) -> AnnData:
-    """Preprocess expression data from Fasolino et al., 2021.
+    """
+    Preprocess expression data from Fasolino et al., 2021.
 
     Args:
+    ----
         download_path: Path containing the downloaded Fasolino et al. 2021 data file.
         n_top_genes: Number of most variable genes to retain.
 
-    Returns:
+    Returns
+    -------
         An AnnData object containing single-cell expression data. The layer
         "count" contains the count data for the most variable genes. The X
         variable contains the total-count-normalized and log-transformed data
@@ -82,4 +92,5 @@ def preprocess_fasolino_2021(download_path: str, n_top_genes: int) -> AnnData:
     sc.pp.highly_variable_genes(
         adata, flavor="seurat_v3", n_top_genes=n_top_genes, layer="count", subset=True
     )
+    adata = adata[adata.layers["count"].sum(1) != 0]  # Remove cells with all zeros.
     return adata

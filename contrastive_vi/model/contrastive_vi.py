@@ -40,6 +40,11 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         use_observed_lib_size: Use observed library size for RNA as scaling factor in
             mean of conditional distribution.
         disentangle: Whether to disentangle the salient and background latent variables.
+        use_mmd: Whether to use the maximum mean discrepancy loss to force background
+            latent variables to have the same distribution for background and target
+            data.
+        mmd_weight: Weight used for the MMD loss.
+        gammas: Gamma parameters for the MMD loss.
     """
 
     def __init__(
@@ -53,6 +58,9 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         dropout_rate: float = 0.1,
         use_observed_lib_size: bool = True,
         disentangle: bool = False,
+        use_mmd: bool = False,
+        mmd_weight: float = 1.0,
+        gammas: Optional[np.ndarray] = None,
     ) -> None:
         super(ContrastiveVIModel, self).__init__(adata)
         # self.summary_stats from BaseModelClass gives info about anndata dimensions
@@ -74,6 +82,9 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
             library_log_means=library_log_means,
             library_log_vars=library_log_vars,
             disentangle=disentangle,
+            use_mmd=use_mmd,
+            mmd_weight=mmd_weight,
+            gammas=gammas,
         )
         self._model_summary_string = "Contrastive-VI."
         # Necessary line to get params to be used for saving and loading.
