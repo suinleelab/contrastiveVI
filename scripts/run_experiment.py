@@ -10,7 +10,7 @@ import scanpy as sc
 import tensorflow as tf
 import torch
 from contrastive import CPCA
-from cplvm import CPLVM
+from cplvm import CGLVM, CPLVM, CGLVMMFGaussianApprox, CPLVMLogNormalApprox
 from pcpca import PCPCA
 from scvi._settings import settings
 from scvi.model import SCVI
@@ -37,6 +37,7 @@ parser.add_argument(
         "PCPCA",
         "cPCA",
         "CPLVM",
+        "CGLVM",
         "cVAE",
     ],
     help="Which model to train",
@@ -100,7 +101,7 @@ torch_models = [
     "TC_contrastiveVI",
     "mmd_contrastiveVI",
 ]
-tf_models = ["CPLVM"]
+tf_models = ["CPLVM", "CGLVM"]
 normalized_expressions = None
 
 # For deep learning methods, we experiment with multiple random initializations
@@ -301,7 +302,7 @@ elif args.method in tf_models:
     for seed in args.random_seeds:
         tf.random.set_seed(seed)
 
-        if args.method == "CPLVM":
+        if args.method == "CPLVM" or args.method == "CGLVM":
             background_data = (
                 adata[adata.obs[split_key] == background_value]
                 .layers["count"]
@@ -312,16 +313,57 @@ elif args.method in tf_models:
                 .layers["count"]
                 .transpose()
             )
-            model = CPLVM(k_shared=args.latent_size, k_foreground=args.latent_size)
-            model_output = model.fit_model_vi(
-                X=background_data,
-                Y=target_data,
-                compute_size_factors=True,
-                is_H0=False,
-                offset_term=True,
+
+            if args.method == "CPLVM":
+                lvm = CPLVM(
+                    k_shared=args.latent_size,
+                    k_foreground=args.latent_size,
+                    compute_size_factors=True,
+                    offset_term=False,
+                )
+
+                # Set up approximate model
+                approx_model = CPLVMLogNormalApprox(
+                    background_data,
+                    target_data,
+                    k_shared=args.latent_size,
+                    k_foreground=args.latent_size,
+                    compute_size_factors=True,
+                    offset_term=False,
+                )
+            elif args.method == "CGLVM":
+                lvm = CGLVM(k_shared=args.latent_size, k_foreground=args.latent_size)
+
+                # Set up approximate model
+                approx_model = CGLVMMFGaussianApprox(
+                    background_data,
+                    target_data,
+                    k_shared=args.latent_size,
+                    k_foreground=args.latent_size,
+                    compute_size_factors=True,
+                )
+
+            # Fit model
+            model_output = lvm.fit_model_vi(
+                background_data,
+                target_data,
+                approximate_model=approx_model,
             )
-            model_output = {key: tensor.numpy() for key, tensor in model_output.items()}
-            latent_representations = model_output["qty_mean"].transpose()
+
+            # The CPLVM package author used different keys for the two models
+            # (this was a mistake I assume)
+            approx_model_key = (
+                "approximate_model" if args.method == "CPLVM" else "approx_model"
+            )
+            model_output = {
+                "qty_mean": model_output[approx_model_key]
+                .qty_mean.numpy()
+                .transpose(),  # Salient
+                "qzy_mean": model_output[approx_model_key]
+                .qzy_mean.numpy()
+                .transpose(),  # Background
+            }
+            latent_representations = model_output["qty_mean"]
 
             results_dir = os.path.join(
                 constants.DEFAULT_RESULTS_PATH,
