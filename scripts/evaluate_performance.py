@@ -55,6 +55,7 @@ deterministic_methods = ["cPCA", "PCPCA"]
 non_deterministic_methods = [
     "cVAE",
     "CPLVM",
+    "CGLVM",
     "scVI",
     "contrastiveVI",
     "TC_contrastiveVI",
