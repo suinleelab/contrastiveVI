@@ -2,7 +2,7 @@
 import argparse
 import os
 
-dataset_list = ["mcfarland_2020", "zheng_2017", "haber_2017", "fasolino_2021"]
+dataset_list = ["mcfarland_2020", "zheng_2017", "haber_2017"]
 latent_size_list = [2, 10, 32, 64]
 
 parser = argparse.ArgumentParser()
