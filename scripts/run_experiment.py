@@ -125,7 +125,7 @@ if args.method in torch_models:
                 disentangle=False,
                 use_mmd=False,
                 n_salient_latent=args.latent_size,
-                n_background_latent=args.latent_size,
+                n_background_latent=10,
                 use_observed_lib_size=False,
             )
 
@@ -158,7 +158,7 @@ if args.method in torch_models:
                 disentangle=True,
                 use_mmd=False,
                 n_salient_latent=args.latent_size,
-                n_background_latent=args.latent_size,
+                n_background_latent=10,
                 use_observed_lib_size=False,
             )
 
@@ -194,7 +194,7 @@ if args.method in torch_models:
                 gammas=gammas,
                 mmd_weight=10000,
                 n_salient_latent=args.latent_size,
-                n_background_latent=args.latent_size,
+                n_background_latent=10,
                 use_observed_lib_size=False,
             )
 
@@ -241,7 +241,7 @@ if args.method in torch_models:
             model = CVAEModel(
                 adata,
                 n_salient_latent=args.latent_size,
-                n_background_latent=args.latent_size,
+                n_background_latent=10,
             )
 
             # np.where returns a list of indices, one for each dimension of the input
@@ -316,7 +316,7 @@ elif args.method in tf_models:
 
             if args.method == "CPLVM":
                 lvm = CPLVM(
-                    k_shared=args.latent_size,
+                    k_shared=10,
                     k_foreground=args.latent_size,
                     compute_size_factors=True,
                     offset_term=False,
@@ -326,19 +326,19 @@ elif args.method in tf_models:
                 approx_model = CPLVMLogNormalApprox(
                     background_data,
                     target_data,
-                    k_shared=args.latent_size,
+                    k_shared=10,
                     k_foreground=args.latent_size,
                     compute_size_factors=True,
                     offset_term=False,
                 )
             elif args.method == "CGLVM":
-                lvm = CGLVM(k_shared=args.latent_size, k_foreground=args.latent_size)
+                lvm = CGLVM(k_shared=10, k_foreground=args.latent_size)
 
                 # Set up approximate model
                 approx_model = CGLVMMFGaussianApprox(
                     background_data,
                     target_data,
-                    k_shared=args.latent_size,
+                    k_shared=10,
                     k_foreground=args.latent_size,
                     compute_size_factors=True,
                 )

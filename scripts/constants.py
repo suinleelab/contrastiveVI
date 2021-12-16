@@ -9,7 +9,7 @@ DATASET_LIST = [
     "mcfarland_2020",
 ]
 DEFAULT_DATA_PATH = "/projects/leelab/data/single-cell"
-DEFAULT_RESULTS_PATH = "/projects/leelab/contrastiveVI/results/"
+DEFAULT_RESULTS_PATH = "/projects/leelab/contrastiveVI/results-fixed-background-size/"
 DEFAULT_SEEDS = [123, 42, 789, 46, 999]
 
 DATASET_SPLIT_LOOKUP = {
