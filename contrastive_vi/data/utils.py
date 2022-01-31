@@ -148,10 +148,10 @@ def get_library_log_means_and_vars(adata: AnnData) -> Tuple[np.ndarray, np.ndarr
 
     library_log_means = []
     library_log_vars = []
-    batches = adata.uns["_scvi"]["categorical_mappings"]["_scvi_batch"]["mapping"]
+    batches = adata.obs["_scvi_batch"].unique()
     for batch in batches:
         if len(batches) > 1:
-            library = count_data[adata.obs["batch"] == batch].sum(1)
+            library = count_data[adata.obs["_scvi_batch"] == batch].sum(1)
         else:
             library = count_data.sum(1)
         library_log = np.ma.log(library)
