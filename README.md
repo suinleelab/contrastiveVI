@@ -1,6 +1,6 @@
 # contrastiveVI
 
-<img align="center" src="./sketch/sketch.png?raw=true" width="750">
+<img align="center" src="./sketch.png?raw=true" width="750">
 
 contrastiveVI is a generative model designed to isolate factors of variation specific to 
 a group of "target" cells (e.g. from specimens with a given disease) from those shared
