@@ -33,13 +33,16 @@ using a procedure similar to that of [scVI
 
 ### Colab Notebook Examples
 
+* [Applying contrastiveVI to see the effects of stem cell transplants for leukemia patients
+](https://colab.research.google.com/drive/1yOTCVNWY6BydS1bppOYCWHvrxuvhMxZV?usp=sharing)
 * [Applying contrastiveVI to separate mouse intestinal epithelial cells
 infected with different pathogens by pathogen type
 ](https://colab.research.google.com/drive/1z0AcKQg7juArXGCx1XKj6skojWKRlDMC?usp=sharing)
 * [Applying contrastiveVI to better understand the results of a MIX-Seq
 small-molecule drug perturbation experiment
 ](https://colab.research.google.com/drive/1cMaJpMe3g0awCiwsw13oG7RvGnmXNCac?usp=sharing)
-
+* [Applying contrastiveVI to better understand heterogeneity in cellular responses to Alzheimer's disease
+](https://colab.research.google.com/drive/1_R1YWQQUJzgQ6kz1XqglL5xZn8b8h1TX?usp=sharing)
 
 
 ## Development guide
