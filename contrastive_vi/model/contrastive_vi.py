@@ -10,13 +10,16 @@ import pandas as pd
 import torch
 from anndata import AnnData
 from scvi import REGISTRY_KEYS
-from scvi.data._anndata import _setup_anndata
-from scvi.dataloaders import AnnDataLoader
-from scvi.model._utils import (
-    _get_batch_code_from_category,
-    _get_var_names_from_setup_anndata,
-    scrna_raw_counts_properties,
+from scvi.data import AnnDataManager
+from scvi.data.fields import (
+    CategoricalJointObsField,
+    CategoricalObsField,
+    LayerField,
+    NumericalJointObsField,
+    NumericalObsField,
 )
+from scvi.dataloaders import AnnDataLoader
+from scvi.model._utils import _get_batch_code_from_category, scrna_raw_counts_properties
 from scvi.model.base import BaseModelClass
 from scvi.model.base._utils import _de_core
 
@@ -94,15 +97,18 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         self.init_params_ = self._get_init_params(locals())
         logger.info("The model has been initialized")
 
+    @classmethod
     @staticmethod
     def setup_anndata(
+        cls,
         adata: AnnData,
+        layer: Optional[str] = None,
         batch_key: Optional[str] = None,
         labels_key: Optional[str] = None,
-        layer: Optional[str] = None,
+        size_factor_key: Optional[str] = None,
         categorical_covariate_keys: Optional[List[str]] = None,
         continuous_covariate_keys: Optional[List[str]] = None,
-        copy: bool = False,
+        **kwargs,
     ) -> Optional[AnnData]:
         """
         Set up AnnData instance for contrastive-VI model.
@@ -111,6 +117,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         ----
             adata: AnnData object containing raw counts. Rows represent cells, columns
                 represent features.
+            layer: If not None, uses this as the key in adata.layers for raw count data.
             batch_key: Key in `adata.obs` for batch information. Categories will
                 automatically be converted into integer categories and saved to
                 `adata.obs["_scvi_batch"]`. If None, assign the same batch to all the
@@ -119,28 +126,40 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
                 automatically be converted into integer categories and saved to
                 `adata.obs["_scvi_labels"]`. If None, assign the same label to all the
                 data.
-            layer: If not None, use this as the key in `adata.layers` for raw count
-                data.
+            size_factor_key: Key in `adata.obs` for size factor information. Instead of
+                using library size as a size factor, the provided size factor column
+                will be used as offset in the mean of the likelihood. Assumed to be on
+                linear scale.
             categorical_covariate_keys: Keys in `adata.obs` corresponding to categorical
                 data. Used in some models.
             continuous_covariate_keys: Keys in `adata.obs` corresponding to continuous
                 data. Used in some models.
-            copy: If True, a copy of `adata` is returned.
 
         Returns
         -------
             If `copy` is True, return the modified `adata` set up for contrastive-VI
             model, otherwise `adata` is modified in place.
         """
-        return _setup_anndata(
-            adata,
-            batch_key=batch_key,
-            labels_key=labels_key,
-            layer=layer,
-            categorical_covariate_keys=categorical_covariate_keys,
-            continuous_covariate_keys=continuous_covariate_keys,
-            copy=copy,
+        setup_method_args = cls._get_setup_method_args(**locals())
+        anndata_fields = [
+            LayerField(REGISTRY_KEYS.X_KEY, layer, is_count_data=True),
+            CategoricalObsField(REGISTRY_KEYS.BATCH_KEY, batch_key),
+            CategoricalObsField(REGISTRY_KEYS.LABELS_KEY, labels_key),
+            NumericalObsField(
+                REGISTRY_KEYS.SIZE_FACTOR_KEY, size_factor_key, required=False
+            ),
+            CategoricalJointObsField(
+                REGISTRY_KEYS.CAT_COVS_KEY, categorical_covariate_keys
+            ),
+            NumericalJointObsField(
+                REGISTRY_KEYS.CONT_COVS_KEY, continuous_covariate_keys
+            ),
+        ]
+        adata_manager = AnnDataManager(
+            fields=anndata_fields, setup_method_args=setup_method_args
         )
+        adata_manager.register_fields(adata, **kwargs)
+        cls.register_manager(adata_manager)
 
     @torch.no_grad()
     def get_latent_representation(
@@ -320,7 +339,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         if gene_list is None:
             gene_mask = slice(None)
         else:
-            all_genes = _get_var_names_from_setup_anndata(adata)
+            all_genes = adata.var_names
             gene_mask = [True if gene in gene_list else False for gene in all_genes]
 
         if n_samples > 1 and return_mean is False:
@@ -531,7 +550,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         Differential expression DataFrame.
         """
         adata = self._validate_anndata(adata)
-        col_names = _get_var_names_from_setup_anndata(adata)
+        col_names = adata.var_names
         model_fn = partial(
             self.get_salient_normalized_expression,
             return_numpy=True,
