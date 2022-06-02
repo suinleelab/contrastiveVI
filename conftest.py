@@ -82,10 +82,10 @@ def mock_adata_target_label(mock_adata):
 
 @pytest.fixture
 def mock_contrastive_dataloader(
-    mock_adata, mock_adata_background_indices, mock_adata_target_indices
+    mock_adata_manager, mock_adata_background_indices, mock_adata_target_indices
 ):
     return ContrastiveDataLoader(
-        mock_adata,
+        mock_adata_manager,
         mock_adata_background_indices,
         mock_adata_target_indices,
         batch_size=32,

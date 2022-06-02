@@ -9,6 +9,7 @@ class TestContrastiveDataLoader:
     def test_one_batch(
         self,
         mock_adata,
+        mock_adata_manager,
         mock_adata_background_indices,
         mock_adata_background_label,
         mock_adata_target_indices,
@@ -16,7 +17,7 @@ class TestContrastiveDataLoader:
     ):
         batch_size = 32
         dataloader = ContrastiveDataLoader(
-            mock_adata,
+            mock_adata_manager,
             mock_adata_background_indices,
             mock_adata_target_indices,
             batch_size=batch_size,

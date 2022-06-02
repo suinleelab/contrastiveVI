@@ -63,7 +63,7 @@ class ContrastiveTrainingMixin:
         plan_kwargs = plan_kwargs if isinstance(plan_kwargs, dict) else dict()
 
         data_splitter = ContrastiveDataSplitter(
-            self.adata,
+            self.adata_manager,
             background_indices,
             target_indices,
             train_size=train_size,
