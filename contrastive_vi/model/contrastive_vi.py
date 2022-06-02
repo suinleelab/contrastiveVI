@@ -349,7 +349,9 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
             data_loader_class=AnnDataLoader,
         )
 
-        transform_batch = _get_batch_code_from_category(adata, transform_batch)
+        transform_batch = _get_batch_code_from_category(
+            self.get_anndata_manager(adata, required=True), transform_batch
+        )
 
         if gene_list is None:
             gene_mask = slice(None)
@@ -573,7 +575,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
             batch_size=batch_size,
         )
         result = _de_core(
-            adata,
+            self.get_anndata_manager(adata, required=True),
             model_fn,
             groupby=groupby,
             group1=group1,
