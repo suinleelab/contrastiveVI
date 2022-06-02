@@ -19,11 +19,15 @@ from scvi.data.fields import (
     NumericalObsField,
 )
 from scvi.dataloaders import AnnDataLoader
-from scvi.model._utils import _get_batch_code_from_category, scrna_raw_counts_properties
+from scvi.model._utils import (
+    _get_batch_code_from_category,
+    _init_library_size,
+    scrna_raw_counts_properties,
+)
 from scvi.model.base import BaseModelClass
 from scvi.model.base._utils import _de_core
+from scvi.utils import setup_anndata_dsp
 
-from contrastive_vi.data.utils import get_library_log_means_and_vars
 from contrastive_vi.model.base.training_mixin import ContrastiveTrainingMixin
 from contrastive_vi.module.contrastive_vi import ContrastiveVIModule
 
@@ -69,12 +73,23 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         gammas: Optional[np.ndarray] = None,
     ) -> None:
         super(ContrastiveVIModel, self).__init__(adata)
-        # self.summary_stats from BaseModelClass gives info about anndata dimensions
-        # and other tensor info.
-        if use_observed_lib_size:
-            library_log_means, library_log_vars = None, None
-        else:
-            library_log_means, library_log_vars = get_library_log_means_and_vars(adata)
+
+        n_cats_per_cov = (
+            self.adata_manager.get_state_registry(
+                REGISTRY_KEYS.CAT_COVS_KEY
+            ).n_cats_per_key
+            if REGISTRY_KEYS.CAT_COVS_KEY in self.adata_manager.data_registry
+            else None
+        )
+        n_batch = self.summary_stats.n_batch
+        use_size_factor_key = (
+            REGISTRY_KEYS.SIZE_FACTOR_KEY in self.adata_manager.data_registry
+        )
+        library_log_means, library_log_vars = None, None
+        if not use_size_factor_key:
+            library_log_means, library_log_vars = _init_library_size(
+                self.adata_manager, n_batch
+            )
 
         self.module = ContrastiveVIModule(
             n_input=self.summary_stats["n_vars"],
@@ -98,7 +113,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         logger.info("The model has been initialized")
 
     @classmethod
-    @staticmethod
+    @setup_anndata_dsp.dedent
     def setup_anndata(
         cls,
         adata: AnnData,

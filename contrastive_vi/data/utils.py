@@ -1,8 +1,6 @@
 """Data preprocessing utilities."""
 import os
-from typing import Tuple
 
-import numpy as np
 import requests
 from anndata import AnnData
 
@@ -24,42 +22,6 @@ def download_binary_file(file_url: str, output_path: str) -> None:
     with open(output_path, "wb") as f:
         f.write(request.content)
     print(f"Downloaded data from {file_url} at {output_path}")
-
-
-def get_library_log_means_and_vars(adata: AnnData) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Get the mean and variance of log library size for each experimental batch.
-
-    Args:
-    ----
-        adata: AnnData object that has been registered via `setup_anndata`.
-
-    Returns
-    -------
-        A tuple of numpy array `library_log_means` and `library_log_vars` for the mean
-        and variance, respectively. Each has shape `(1, n_batch)`.
-    """
-    count_data_registry = adata.uns["_scvi"]["data_registry"]["X"]
-    if count_data_registry["attr_name"] == "layers":
-        count_data = adata.layers[count_data_registry["attr_key"]]
-    else:
-        count_data = adata.X
-
-    library_log_means = []
-    library_log_vars = []
-    batches = adata.obs["_scvi_batch"].unique()
-    for batch in batches:
-        if len(batches) > 1:
-            library = count_data[adata.obs["_scvi_batch"] == batch].sum(1)
-        else:
-            library = count_data.sum(1)
-        library_log = np.ma.log(library)
-        library_log = library_log.filled(0.0)  # Fill invalid log values with zeros.
-        library_log_means.append(library_log.mean())
-        library_log_vars.append(library_log.var())
-    library_log_means = np.array(library_log_means)[np.newaxis, :]
-    library_log_vars = np.array(library_log_vars)[np.newaxis, :]
-    return library_log_means, library_log_vars
 
 
 def save_preprocessed_adata(adata: AnnData, output_path: str) -> None:
