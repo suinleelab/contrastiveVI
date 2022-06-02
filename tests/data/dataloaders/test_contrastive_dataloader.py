@@ -1,5 +1,5 @@
 import torch
-from scvi import _CONSTANTS
+from scvi import REGISTRY_KEYS
 
 from contrastive_vi.data.dataloaders.contrastive_dataloader import ContrastiveDataLoader
 from tests.utils import get_next_batch
@@ -39,12 +39,14 @@ class TestContrastiveDataLoader:
             ]
         )
 
-        assert torch.equal(batch["background"][_CONSTANTS.X_KEY], expected_background_data)
-        assert torch.equal(batch["target"][_CONSTANTS.X_KEY], expected_target_data)
+        assert torch.equal(
+            batch["background"][REGISTRY_KEYS.X_KEY], expected_background_data
+        )
+        assert torch.equal(batch["target"][REGISTRY_KEYS.X_KEY], expected_target_data)
 
         assert (
-            batch["background"][_CONSTANTS.BATCH_KEY] == mock_adata_background_label
+            batch["background"][REGISTRY_KEYS.BATCH_KEY] == mock_adata_background_label
         ).sum() == batch_size
         assert (
-            batch["target"][_CONSTANTS.BATCH_KEY] == mock_adata_target_label
+            batch["target"][REGISTRY_KEYS.BATCH_KEY] == mock_adata_target_label
         ).sum() == batch_size

@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from scvi import _CONSTANTS
+from scvi import REGISTRY_KEYS
 from scvi.distributions import ZeroInflatedNegativeBinomial
 from scvi.module.base import BaseModuleClass, LossRecorder, auto_move_data
 from scvi.nn import DecoderSCVI, Encoder, one_hot
@@ -171,8 +171,8 @@ class ContrastiveVIModule(BaseModuleClass):
     @staticmethod
     def _get_min_batch_size(concat_tensors: Dict[str, Dict[str, torch.Tensor]]) -> int:
         return min(
-            concat_tensors["background"][_CONSTANTS.X_KEY].shape[0],
-            concat_tensors["target"][_CONSTANTS.X_KEY].shape[0],
+            concat_tensors["background"][REGISTRY_KEYS.X_KEY].shape[0],
+            concat_tensors["target"][REGISTRY_KEYS.X_KEY].shape[0],
         )
 
     @staticmethod
@@ -187,8 +187,8 @@ class ContrastiveVIModule(BaseModuleClass):
         concat_tensors: Dict[str, Dict[str, torch.Tensor]], index: str
     ) -> Dict[str, torch.Tensor]:
         tensors = concat_tensors[index]
-        x = tensors[_CONSTANTS.X_KEY]
-        batch_index = tensors[_CONSTANTS.BATCH_KEY]
+        x = tensors[REGISTRY_KEYS.X_KEY]
+        batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
         input_dict = dict(x=x, batch_index=batch_index)
         return input_dict
 
@@ -210,7 +210,7 @@ class ContrastiveVIModule(BaseModuleClass):
         concat_tensors: Dict[str, Dict[str, torch.Tensor]], index: str
     ) -> Dict[str, torch.Tensor]:
         tensors = concat_tensors[index]
-        batch_index = tensors[_CONSTANTS.BATCH_KEY]
+        batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
         input_dict = dict(batch_index=batch_index)
         return input_dict
 
@@ -498,8 +498,8 @@ class ContrastiveVIModule(BaseModuleClass):
         inference_outputs: Dict[str, torch.Tensor],
         generative_outputs: Dict[str, torch.Tensor],
     ) -> Dict[str, torch.Tensor]:
-        x = tensors[_CONSTANTS.X_KEY]
-        batch_index = tensors[_CONSTANTS.BATCH_KEY]
+        x = tensors[REGISTRY_KEYS.X_KEY]
+        batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
 
         qz_m = inference_outputs["qz_m"]
         qz_v = inference_outputs["qz_v"]

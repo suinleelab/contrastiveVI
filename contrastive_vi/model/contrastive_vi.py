@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import torch
 from anndata import AnnData
-from scvi import _CONSTANTS
+from scvi import REGISTRY_KEYS
 from scvi.data._anndata import _setup_anndata
 from scvi.dataloaders import AnnDataLoader
 from scvi.model._utils import (
@@ -185,8 +185,8 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         )
         latent = []
         for tensors in data_loader:
-            x = tensors[_CONSTANTS.X_KEY]
-            batch_index = tensors[_CONSTANTS.BATCH_KEY]
+            x = tensors[REGISTRY_KEYS.X_KEY]
+            batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
             outputs = self.module._generic_inference(
                 x=x, batch_index=batch_index, n_samples=1
             )
@@ -340,8 +340,8 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         background_exprs = []
         salient_exprs = []
         for tensors in data_loader:
-            x = tensors[_CONSTANTS.X_KEY]
-            batch_index = tensors[_CONSTANTS.BATCH_KEY]
+            x = tensors[REGISTRY_KEYS.X_KEY]
+            batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
             background_per_batch_exprs = []
             salient_per_batch_exprs = []
             for batch in transform_batch:
