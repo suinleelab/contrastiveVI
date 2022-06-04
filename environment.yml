@@ -5,12 +5,3 @@ channels:
 dependencies:
   - python>=3.9
   - pip
-  - r-base
-  - r-essentials
-  - pip:
-    - pcpca==0.4
-    - contrastive==1.1.0
-    - tensorflow==2.7.0
-    - tensorflow-probability==0.11.0
-    - cplvm==0.3
-    - gseapy
