@@ -9,7 +9,7 @@ repos:
       rev: 21.9b0
       hooks:
           - id: black
-            additional_dependencies: [toml]
+            additional_dependencies: [toml, click==8.0.4]
             args:
               - --line-length=88
     - repo: https://github.com/PyCQA/pydocstyle
