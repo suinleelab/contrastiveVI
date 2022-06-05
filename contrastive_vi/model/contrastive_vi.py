@@ -3,7 +3,7 @@
 import logging
 import warnings
 from functools import partial
-from typing import Dict, Iterable, List, Literal, Optional, Sequence, Union
+from typing import Dict, Iterable, List, Optional, Sequence, Union
 
 import numpy as np
 import pandas as pd
@@ -183,7 +183,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         indices: Optional[Sequence[int]] = None,
         give_mean: bool = True,
         batch_size: Optional[int] = None,
-        representation_kind: Literal["background":"salient"] = "salient",
+        representation_kind: str = "salient",
     ) -> np.ndarray:
         """
         Return the background or salient latent representation for each cell.
@@ -244,7 +244,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         indices: Optional[Sequence[int]] = None,
         transform_batch: Optional[Sequence[Union[Number, str]]] = None,
         gene_list: Optional[Sequence[str]] = None,
-        library_size: Union[float, Literal["latent"]] = 1,
+        library_size: Union[float, str] = 1.0,
         n_samples: int = 1,
         batch_size: Optional[int] = None,
     ) -> np.ndarray:
@@ -297,7 +297,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         indices: Optional[Sequence[int]] = None,
         transform_batch: Optional[Sequence[Union[Number, str]]] = None,
         gene_list: Optional[Sequence[str]] = None,
-        library_size: Union[float, Literal["latent"]] = 1,
+        library_size: Union[float, str] = 1.0,
         n_samples: int = 1,
         n_samples_overall: Optional[int] = None,
         batch_size: Optional[int] = None,
@@ -444,7 +444,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         indices: Optional[Sequence[int]] = None,
         transform_batch: Optional[Sequence[Union[Number, str]]] = None,
         gene_list: Optional[Sequence[str]] = None,
-        library_size: Union[float, Literal["latent"]] = 1,
+        library_size: Union[float, str] = 1.0,
         n_samples: int = 1,
         n_samples_overall: Optional[int] = None,
         batch_size: Optional[int] = None,
@@ -506,7 +506,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         group2: Optional[str] = None,
         idx1: Optional[Union[Sequence[int], Sequence[bool], str]] = None,
         idx2: Optional[Union[Sequence[int], Sequence[bool], str]] = None,
-        mode: Literal["vanilla", "change"] = "change",
+        mode: str = "change",
         delta: float = 0.25,
         batch_size: Optional[int] = None,
         all_stats: bool = True,
