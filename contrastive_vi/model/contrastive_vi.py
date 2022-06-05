@@ -3,24 +3,31 @@
 import logging
 import warnings
 from functools import partial
-from typing import Dict, Iterable, List, Literal, Optional, Sequence, Union
+from typing import Dict, Iterable, List, Optional, Sequence, Union
 
 import numpy as np
 import pandas as pd
 import torch
 from anndata import AnnData
-from scvi import _CONSTANTS
-from scvi.data._anndata import _setup_anndata
+from scvi import REGISTRY_KEYS
+from scvi.data import AnnDataManager
+from scvi.data.fields import (
+    CategoricalJointObsField,
+    CategoricalObsField,
+    LayerField,
+    NumericalJointObsField,
+    NumericalObsField,
+)
 from scvi.dataloaders import AnnDataLoader
 from scvi.model._utils import (
     _get_batch_code_from_category,
-    _get_var_names_from_setup_anndata,
+    _init_library_size,
     scrna_raw_counts_properties,
 )
 from scvi.model.base import BaseModelClass
 from scvi.model.base._utils import _de_core
+from scvi.utils import setup_anndata_dsp
 
-from contrastive_vi.data.utils import get_library_log_means_and_vars
 from contrastive_vi.model.base.training_mixin import ContrastiveTrainingMixin
 from contrastive_vi.module.contrastive_vi import ContrastiveVIModule
 
@@ -66,12 +73,23 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         gammas: Optional[np.ndarray] = None,
     ) -> None:
         super(ContrastiveVIModel, self).__init__(adata)
-        # self.summary_stats from BaseModelClass gives info about anndata dimensions
-        # and other tensor info.
-        if use_observed_lib_size:
-            library_log_means, library_log_vars = None, None
-        else:
-            library_log_means, library_log_vars = get_library_log_means_and_vars(adata)
+
+        n_cats_per_cov = (
+            self.adata_manager.get_state_registry(
+                REGISTRY_KEYS.CAT_COVS_KEY
+            ).n_cats_per_key
+            if REGISTRY_KEYS.CAT_COVS_KEY in self.adata_manager.data_registry
+            else None
+        )
+        n_batch = self.summary_stats.n_batch
+        use_size_factor_key = (
+            REGISTRY_KEYS.SIZE_FACTOR_KEY in self.adata_manager.data_registry
+        )
+        library_log_means, library_log_vars = None, None
+        if not use_size_factor_key:
+            library_log_means, library_log_vars = _init_library_size(
+                self.adata_manager, n_batch
+            )
 
         self.module = ContrastiveVIModule(
             n_input=self.summary_stats["n_vars"],
@@ -94,15 +112,18 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         self.init_params_ = self._get_init_params(locals())
         logger.info("The model has been initialized")
 
-    @staticmethod
+    @classmethod
+    @setup_anndata_dsp.dedent
     def setup_anndata(
+        cls,
         adata: AnnData,
+        layer: Optional[str] = None,
         batch_key: Optional[str] = None,
         labels_key: Optional[str] = None,
-        layer: Optional[str] = None,
+        size_factor_key: Optional[str] = None,
         categorical_covariate_keys: Optional[List[str]] = None,
         continuous_covariate_keys: Optional[List[str]] = None,
-        copy: bool = False,
+        **kwargs,
     ) -> Optional[AnnData]:
         """
         Set up AnnData instance for contrastive-VI model.
@@ -111,6 +132,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         ----
             adata: AnnData object containing raw counts. Rows represent cells, columns
                 represent features.
+            layer: If not None, uses this as the key in adata.layers for raw count data.
             batch_key: Key in `adata.obs` for batch information. Categories will
                 automatically be converted into integer categories and saved to
                 `adata.obs["_scvi_batch"]`. If None, assign the same batch to all the
@@ -119,28 +141,40 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
                 automatically be converted into integer categories and saved to
                 `adata.obs["_scvi_labels"]`. If None, assign the same label to all the
                 data.
-            layer: If not None, use this as the key in `adata.layers` for raw count
-                data.
+            size_factor_key: Key in `adata.obs` for size factor information. Instead of
+                using library size as a size factor, the provided size factor column
+                will be used as offset in the mean of the likelihood. Assumed to be on
+                linear scale.
             categorical_covariate_keys: Keys in `adata.obs` corresponding to categorical
                 data. Used in some models.
             continuous_covariate_keys: Keys in `adata.obs` corresponding to continuous
                 data. Used in some models.
-            copy: If True, a copy of `adata` is returned.
 
         Returns
         -------
             If `copy` is True, return the modified `adata` set up for contrastive-VI
             model, otherwise `adata` is modified in place.
         """
-        return _setup_anndata(
-            adata,
-            batch_key=batch_key,
-            labels_key=labels_key,
-            layer=layer,
-            categorical_covariate_keys=categorical_covariate_keys,
-            continuous_covariate_keys=continuous_covariate_keys,
-            copy=copy,
+        setup_method_args = cls._get_setup_method_args(**locals())
+        anndata_fields = [
+            LayerField(REGISTRY_KEYS.X_KEY, layer, is_count_data=True),
+            CategoricalObsField(REGISTRY_KEYS.BATCH_KEY, batch_key),
+            CategoricalObsField(REGISTRY_KEYS.LABELS_KEY, labels_key),
+            NumericalObsField(
+                REGISTRY_KEYS.SIZE_FACTOR_KEY, size_factor_key, required=False
+            ),
+            CategoricalJointObsField(
+                REGISTRY_KEYS.CAT_COVS_KEY, categorical_covariate_keys
+            ),
+            NumericalJointObsField(
+                REGISTRY_KEYS.CONT_COVS_KEY, continuous_covariate_keys
+            ),
+        ]
+        adata_manager = AnnDataManager(
+            fields=anndata_fields, setup_method_args=setup_method_args
         )
+        adata_manager.register_fields(adata, **kwargs)
+        cls.register_manager(adata_manager)
 
     @torch.no_grad()
     def get_latent_representation(
@@ -149,7 +183,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         indices: Optional[Sequence[int]] = None,
         give_mean: bool = True,
         batch_size: Optional[int] = None,
-        representation_kind: Literal["background":"salient"] = "salient",
+        representation_kind: str = "salient",
     ) -> np.ndarray:
         """
         Return the background or salient latent representation for each cell.
@@ -185,8 +219,8 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         )
         latent = []
         for tensors in data_loader:
-            x = tensors[_CONSTANTS.X_KEY]
-            batch_index = tensors[_CONSTANTS.BATCH_KEY]
+            x = tensors[REGISTRY_KEYS.X_KEY]
+            batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
             outputs = self.module._generic_inference(
                 x=x, batch_index=batch_index, n_samples=1
             )
@@ -210,7 +244,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         indices: Optional[Sequence[int]] = None,
         transform_batch: Optional[Sequence[Union[Number, str]]] = None,
         gene_list: Optional[Sequence[str]] = None,
-        library_size: Union[float, Literal["latent"]] = 1,
+        library_size: Union[float, str] = 1.0,
         n_samples: int = 1,
         batch_size: Optional[int] = None,
     ) -> np.ndarray:
@@ -263,7 +297,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         indices: Optional[Sequence[int]] = None,
         transform_batch: Optional[Sequence[Union[Number, str]]] = None,
         gene_list: Optional[Sequence[str]] = None,
-        library_size: Union[float, Literal["latent"]] = 1,
+        library_size: Union[float, str] = 1.0,
         n_samples: int = 1,
         n_samples_overall: Optional[int] = None,
         batch_size: Optional[int] = None,
@@ -315,12 +349,14 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
             data_loader_class=AnnDataLoader,
         )
 
-        transform_batch = _get_batch_code_from_category(adata, transform_batch)
+        transform_batch = _get_batch_code_from_category(
+            self.get_anndata_manager(adata, required=True), transform_batch
+        )
 
         if gene_list is None:
             gene_mask = slice(None)
         else:
-            all_genes = _get_var_names_from_setup_anndata(adata)
+            all_genes = adata.var_names
             gene_mask = [True if gene in gene_list else False for gene in all_genes]
 
         if n_samples > 1 and return_mean is False:
@@ -340,8 +376,8 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         background_exprs = []
         salient_exprs = []
         for tensors in data_loader:
-            x = tensors[_CONSTANTS.X_KEY]
-            batch_index = tensors[_CONSTANTS.BATCH_KEY]
+            x = tensors[REGISTRY_KEYS.X_KEY]
+            batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
             background_per_batch_exprs = []
             salient_per_batch_exprs = []
             for batch in transform_batch:
@@ -408,7 +444,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         indices: Optional[Sequence[int]] = None,
         transform_batch: Optional[Sequence[Union[Number, str]]] = None,
         gene_list: Optional[Sequence[str]] = None,
-        library_size: Union[float, Literal["latent"]] = 1,
+        library_size: Union[float, str] = 1.0,
         n_samples: int = 1,
         n_samples_overall: Optional[int] = None,
         batch_size: Optional[int] = None,
@@ -470,7 +506,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         group2: Optional[str] = None,
         idx1: Optional[Union[Sequence[int], Sequence[bool], str]] = None,
         idx2: Optional[Union[Sequence[int], Sequence[bool], str]] = None,
-        mode: Literal["vanilla", "change"] = "change",
+        mode: str = "change",
         delta: float = 0.25,
         batch_size: Optional[int] = None,
         all_stats: bool = True,
@@ -531,7 +567,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         Differential expression DataFrame.
         """
         adata = self._validate_anndata(adata)
-        col_names = _get_var_names_from_setup_anndata(adata)
+        col_names = adata.var_names
         model_fn = partial(
             self.get_salient_normalized_expression,
             return_numpy=True,
@@ -539,7 +575,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
             batch_size=batch_size,
         )
         result = _de_core(
-            adata,
+            self.get_anndata_manager(adata, required=True),
             model_fn,
             groupby=groupby,
             group1=group1,

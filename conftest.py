@@ -1,22 +1,20 @@
-import numpy as np
 import pytest
 import scvi
+from scvi.model._utils import _init_library_size
 
 from contrastive_vi.data.dataloaders.contrastive_dataloader import ContrastiveDataLoader
-from contrastive_vi.data.utils import get_library_log_means_and_vars
+from contrastive_vi.model.contrastive_vi import ContrastiveVIModel
 from tests.utils import get_next_batch
 
 
 @pytest.fixture
 def mock_adata():
-    adata = scvi.data.synthetic_iid(
-        run_setup_anndata=False, n_batches=2  # Same number of cells in each batch.
-    )
+    adata = scvi.data.synthetic_iid(n_batches=2)  # Same number of cells in each batch.
     # Make number of cells unequal across batches to test edge cases.
     adata = adata[:-3, :]
     adata.layers["raw_counts"] = adata.X.copy()
-    scvi.model.SCVI.setup_anndata(
-        adata,
+    ContrastiveVIModel.setup_anndata(
+        adata=adata,
         batch_key="batch",
         labels_key="labels",
         layer="raw_counts",
@@ -25,8 +23,13 @@ def mock_adata():
 
 
 @pytest.fixture
-def mock_library_log_means_and_vars(mock_adata):
-    return get_library_log_means_and_vars(mock_adata)
+def mock_adata_manager(mock_adata):
+    return ContrastiveVIModel._setup_adata_manager_store[mock_adata.uns["_scvi_uuid"]]
+
+
+@pytest.fixture
+def mock_library_log_means_and_vars(mock_adata_manager):
+    return _init_library_size(mock_adata_manager, n_batch=2)
 
 
 @pytest.fixture
@@ -60,10 +63,7 @@ def mock_adata_background_indices(mock_adata):
 
 @pytest.fixture
 def mock_adata_background_label(mock_adata):
-    return np.where(
-        mock_adata.uns["_scvi"]["categorical_mappings"]["_scvi_batch"]["mapping"]
-        == "batch_0"
-    )[0][0]
+    return 0
 
 
 @pytest.fixture
@@ -77,18 +77,15 @@ def mock_adata_target_indices(mock_adata):
 
 @pytest.fixture
 def mock_adata_target_label(mock_adata):
-    return np.where(
-        mock_adata.uns["_scvi"]["categorical_mappings"]["_scvi_batch"]["mapping"]
-        == "batch_1"
-    )[0][0]
+    return 1
 
 
 @pytest.fixture
 def mock_contrastive_dataloader(
-    mock_adata, mock_adata_background_indices, mock_adata_target_indices
+    mock_adata_manager, mock_adata_background_indices, mock_adata_target_indices
 ):
     return ContrastiveDataLoader(
-        mock_adata,
+        mock_adata_manager,
         mock_adata_background_indices,
         mock_adata_target_indices,
         batch_size=32,

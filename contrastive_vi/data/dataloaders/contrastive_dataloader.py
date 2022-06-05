@@ -2,7 +2,7 @@
 from itertools import cycle
 from typing import List, Optional, Union
 
-from anndata import AnnData
+from scvi.data import AnnDataManager
 from scvi.dataloaders._concat_dataloader import ConcatDataLoader
 
 
@@ -15,6 +15,7 @@ class _ContrastiveIterator:
     "background", containing one batch of data from the background dataloader, and
     "target", containing one batch of data from the target dataloader.
     """
+
     def __init__(self, background, target):
         self.background = iter(background)
         self.target = iter(target)
@@ -36,7 +37,7 @@ class ContrastiveDataLoader(ConcatDataLoader):
     target data points, indexed by "background" and "target", respectively.
     Args:
     ----
-        adata: AnnData object that has been registered via `setup_anndata`.
+        adata_manager: AnnDataManager object that has been created via `setup_anndata`.
         background_indices: Indices for background samples in `adata`.
         target_indices: Indices for target samples in `adata`.
         shuffle: Whether the data should be shuffled.
@@ -53,7 +54,7 @@ class ContrastiveDataLoader(ConcatDataLoader):
 
     def __init__(
         self,
-        adata: AnnData,
+        adata_manager: AnnDataManager,
         background_indices: List[int],
         target_indices: List[int],
         shuffle: bool = False,
@@ -63,7 +64,7 @@ class ContrastiveDataLoader(ConcatDataLoader):
         **data_loader_kwargs,
     ) -> None:
         super().__init__(
-            adata=adata,
+            adata_manager=adata_manager,
             indices_list=[background_indices, target_indices],
             shuffle=shuffle,
             batch_size=batch_size,

@@ -4,7 +4,7 @@ from contrastive_vi.data.dataloaders.data_splitting import ContrastiveDataSplitt
 class TestContrastiveDataSplitter:
     def test_num_batches(
         self,
-        mock_adata,
+        mock_adata_manager,
         mock_adata_background_indices,
         mock_adata_target_indices,
     ) -> None:
@@ -21,7 +21,7 @@ class TestContrastiveDataSplitter:
         expected_test_num_batches = n_max * test_size / batch_size
 
         data_splitter = ContrastiveDataSplitter(
-            mock_adata,
+            mock_adata_manager,
             mock_adata_background_indices,
             mock_adata_target_indices,
             train_size=train_size,
