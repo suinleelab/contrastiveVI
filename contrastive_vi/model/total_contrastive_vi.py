@@ -85,6 +85,7 @@ class TotalContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         latent_distribution: Literal["normal", "ln"] = "normal",
         empirical_protein_background_prior: Optional[bool] = None,
         override_missing_proteins: bool = False,
+        wasserstein_penalty: float = 0,
         **model_kwargs,
     ) -> None:
         super(TotalContrastiveVIModel, self).__init__(adata)
@@ -156,6 +157,7 @@ class TotalContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
             use_size_factor_key=use_size_factor_key,
             library_log_means=library_log_means,
             library_log_vars=library_log_vars,
+            wasserstein_penalty=wasserstein_penalty,
             **model_kwargs,
         )
         self._model_summary_string = "totalContrastiveVI."
@@ -369,6 +371,7 @@ class TotalContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         Return type is ``pd.DataFrame`` unless ``return_numpy`` is True.
         """
         adata = self._validate_anndata(adata)
+        adata_manager = self.get_anndata_manager(adata)
         if indices is None:
             indices = np.arange(adata.n_obs)
         if n_samples_overall is not None:
@@ -401,7 +404,7 @@ class TotalContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         if not isinstance(transform_batch, IterableClass):
             transform_batch = [transform_batch]
 
-        transform_batch = _get_batch_code_from_category(adata, transform_batch)
+        transform_batch = _get_batch_code_from_category(adata_manager, transform_batch)
 
         results = {}
         for expression_type in ["salient", "background"]:
@@ -488,9 +491,10 @@ class TotalContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
                     columns=adata.var_names[gene_mask],
                     index=adata.obs_names[indices],
                 )
+                protein_names = self.protein_state_registry.column_names
                 pro_df = pd.DataFrame(
                     scale_list_pro,
-                    columns=self.scvi_setup_dict_["protein_names"][protein_mask],
+                    columns=protein_names[protein_mask],
                     index=adata.obs_names[indices],
                 )
 
