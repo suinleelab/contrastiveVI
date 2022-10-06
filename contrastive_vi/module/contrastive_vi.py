@@ -555,7 +555,6 @@ class ContrastiveVIModule(BaseModuleClass):
         kl_divergence_z = background_losses["kl_z"] + target_losses["kl_z"]
         kl_divergence_s = target_losses["kl_s"]
         kl_divergence_l = background_losses["kl_library"] + target_losses["kl_library"]
-        mi_penalty = background_losses["kl_s"]
 
         wasserstein_loss = (
             torch.norm(inference_outputs["background"]["qs_m"], dim=-1)**2
@@ -565,7 +564,8 @@ class ContrastiveVIModule(BaseModuleClass):
         kl_local_for_warmup = kl_divergence_z + kl_divergence_s
         kl_local_no_warmup = kl_divergence_l
 
-        weighted_kl_local = kl_weight * (self.wasserstein_penalty*wasserstein_loss + kl_local_for_warmup) + kl_local_no_warmup
+        weighted_kl_local = kl_weight * (self.wasserstein_penalty*wasserstein_loss
+            + kl_local_for_warmup) + kl_local_no_warmup
 
         loss = torch.mean(reconst_loss + weighted_kl_local)
 
