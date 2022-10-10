@@ -726,8 +726,14 @@ class TotalContrastiveVIModule(BaseModuleClass):
             kl_div_l_gene=kl_div_l_gene,
             kl_div_back_pro=kl_div_back_pro,
         )
-
-        return LossRecorder(loss, reconst_losses, kl_local, kl_global=torch.tensor(0.0), wasserstein_loss=torch.sum(wasserstein_loss))
+        kl_global = torch.tensor(0.0)
+        return LossRecorder(
+            loss,
+            reconst_losses,
+            kl_local,
+            kl_global=kl_global,
+            wasserstein_loss=torch.sum(wasserstein_loss)
+        )
 
     @torch.no_grad()
     def sample_mean(

@@ -572,11 +572,16 @@ class ContrastiveVIModule(BaseModuleClass):
         kl_local = dict(
             kl_divergence_l=kl_divergence_l,
             kl_divergence_z=kl_divergence_z,
-            kl_divergence_s = kl_divergence_s
+            kl_divergence_s=kl_divergence_s
         )
         kl_global = torch.tensor(0.0)
-
-        return LossRecorder(loss, reconst_loss, kl_local, kl_global, wasserstein_loss=torch.sum(wasserstein_loss))
+        return LossRecorder(
+            loss,
+            reconst_loss,
+            kl_local,
+            kl_global,
+            wasserstein_loss=torch.sum(wasserstein_loss)
+        )
 
     @torch.no_grad()
     def sample(self):
