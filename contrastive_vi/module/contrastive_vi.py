@@ -37,7 +37,7 @@ class ContrastiveVIModule(BaseModuleClass):
             Parameterize prior on library size if not using observed library size.
         library_log_vars: 1 x n_batch array of variances of the log library sizes.
             Parameterize prior on library size if not using observed library size.
-        disentanglement_penalty: Weight of the disentanglement loss that further
+        wasserstein_penalty: Weight of the Wasserstein distance loss that further
             discourages shared variations from leaking into the salient latent space.
     """
 
