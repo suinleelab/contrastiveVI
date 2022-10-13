@@ -37,6 +37,8 @@ class TotalContrastiveVIModule(BaseModuleClass):
             Parameterize prior on library size if not using observed library size.
         library_log_vars: 1 x n_batch array of variances of the log library sizes.
             Parameterize prior on library size if not using observed library size.
+        wasserstein_penalty: Weight of the Wasserstein distance loss that further
+            discourages shared variations from leaking into the salient latent space.
     """
 
     def __init__(
@@ -69,6 +71,7 @@ class TotalContrastiveVIModule(BaseModuleClass):
         library_log_vars: Optional[np.ndarray] = None,
         use_batch_norm: Literal["encoder", "decoder", "none", "both"] = "both",
         use_layer_norm: Literal["encoder", "decoder", "none", "both"] = "none",
+        wasserstein_penalty: float = 0,
     ) -> None:
         super().__init__()
         self.gene_dispersion = gene_dispersion
@@ -86,6 +89,8 @@ class TotalContrastiveVIModule(BaseModuleClass):
         self.encode_covariates = encode_covariates
         self.use_size_factor_key = use_size_factor_key
         self.use_observed_lib_size = use_size_factor_key or use_observed_lib_size
+        self.wasserstein_penalty = wasserstein_penalty
+
         if not self.use_observed_lib_size:
             if library_log_means is None or library_log_means is None:
                 raise ValueError(
@@ -644,6 +649,7 @@ class TotalContrastiveVIModule(BaseModuleClass):
         concat_tensors: Dict[str, Dict[str, torch.Tensor]],
         inference_outputs: Dict[str, Dict[str, torch.Tensor]],
         generative_outputs: Dict[str, Dict[str, torch.Tensor]],
+        kl_weight: float = 1.0,
     ) -> LossRecorder:
         """
         Compute loss terms for contrastive-VI.
@@ -686,14 +692,15 @@ class TotalContrastiveVIModule(BaseModuleClass):
             background_losses["reconst_loss_protein"]
             + target_losses["reconst_loss_protein"]
         )
-        reconst_losses = dict(
-            reconst_loss_gene=reconst_loss_gene,
-            reconst_loss_protein=reconst_loss_protein,
+
+        wasserstein_loss = (
+            torch.norm(inference_outputs["background"]["qs_m"], dim=-1)**2
+            + torch.sum(inference_outputs["background"]["qs_v"], dim=-1)
         )
 
-        kl_z = background_losses["kl_z"] + target_losses["kl_z"]
-        kl_s = target_losses["kl_s"]
-        kl_library_gene = (
+        kl_div_z = background_losses["kl_z"] + target_losses["kl_z"]
+        kl_div_s = target_losses["kl_s"]
+        kl_div_l_gene = (
             background_losses["kl_library_gene"] + target_losses["kl_library_gene"]
         )
         kl_div_back_pro = (
@@ -703,20 +710,31 @@ class TotalContrastiveVIModule(BaseModuleClass):
         loss = torch.mean(
             reconst_loss_gene
             + reconst_loss_protein
-            + kl_z
-            + kl_s
-            + kl_library_gene
-            + kl_div_back_pro
+            + kl_weight * kl_div_z
+            + kl_weight * kl_div_s
+            + kl_weight * self.wasserstein_penalty*wasserstein_loss
+            + kl_div_l_gene
+            + kl_weight * kl_div_back_pro
         )
 
+        reconst_losses = dict(
+            reconst_loss_gene=reconst_loss_gene,
+            reconst_loss_protein=reconst_loss_protein,
+        )
         kl_local = dict(
-            kl_z=kl_z,
-            kl_s=kl_s,
-            kl_library_gene=kl_library_gene,
+            kl_div_z=kl_div_z,
+            kl_div_s=kl_div_s,
+            kl_div_l_gene=kl_div_l_gene,
             kl_div_back_pro=kl_div_back_pro,
         )
         kl_global = torch.tensor(0.0)
-        return LossRecorder(loss, reconst_losses, kl_local, kl_global)
+        return LossRecorder(
+            loss,
+            reconst_losses,
+            kl_local,
+            kl_global=kl_global,
+            wasserstein_loss=torch.sum(wasserstein_loss)
+        )
 
     @torch.no_grad()
     def sample_mean(

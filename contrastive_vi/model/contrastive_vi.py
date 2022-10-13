@@ -67,10 +67,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         n_layers: int = 1,
         dropout_rate: float = 0.1,
         use_observed_lib_size: bool = True,
-        disentangle: bool = False,
-        use_mmd: bool = False,
-        mmd_weight: float = 1.0,
-        gammas: Optional[np.ndarray] = None,
+        wasserstein_penalty: float = 0
     ) -> None:
         super(ContrastiveVIModel, self).__init__(adata)
 
@@ -102,10 +99,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
             use_observed_lib_size=use_observed_lib_size,
             library_log_means=library_log_means,
             library_log_vars=library_log_vars,
-            disentangle=disentangle,
-            use_mmd=use_mmd,
-            mmd_weight=mmd_weight,
-            gammas=gammas,
+            wasserstein_penalty=wasserstein_penalty
         )
         self._model_summary_string = "Contrastive-VI."
         # Necessary line to get params to be used for saving and loading.
