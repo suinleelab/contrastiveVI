@@ -695,7 +695,7 @@ class TotalContrastiveVIModule(BaseModuleClass):
 
         wasserstein_loss = (
             torch.norm(inference_outputs["background"]["qs_m"], dim=-1)**2
-            + torch.norm(torch.sqrt(inference_outputs["background"]["qs_v"]), dim=-1)**2
+            + torch.sum(inference_outputs["background"]["qs_v"], dim=-1)
         )
 
         kl_div_z = background_losses["kl_z"] + target_losses["kl_z"]
@@ -723,6 +723,7 @@ class TotalContrastiveVIModule(BaseModuleClass):
         )
         kl_local = dict(
             kl_div_z=kl_div_z,
+            kl_div_s=kl_div_s,
             kl_div_l_gene=kl_div_l_gene,
             kl_div_back_pro=kl_div_back_pro,
         )

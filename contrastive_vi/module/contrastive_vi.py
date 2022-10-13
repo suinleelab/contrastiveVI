@@ -558,7 +558,7 @@ class ContrastiveVIModule(BaseModuleClass):
 
         wasserstein_loss = (
             torch.norm(inference_outputs["background"]["qs_m"], dim=-1)**2
-            + torch.norm(torch.sqrt(inference_outputs["background"]["qs_v"]), dim=-1)**2
+            + torch.sum(inference_outputs["background"]["qs_v"], dim=-1)
         )
 
         kl_local_for_warmup = kl_divergence_z + kl_divergence_s
@@ -575,6 +575,9 @@ class ContrastiveVIModule(BaseModuleClass):
             kl_divergence_s=kl_divergence_s
         )
         kl_global = torch.tensor(0.0)
+
+        # LossRecorder internally sums the `reconst_loss`, `kl_local`, and `kl_global`
+        # terms before logging, so we do the same for our `wasserstein_loss` term.
         return LossRecorder(
             loss,
             reconst_loss,
