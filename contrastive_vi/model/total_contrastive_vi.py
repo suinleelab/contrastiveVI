@@ -729,7 +729,7 @@ class TotalContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
             )
 
         result = _de_core(
-            adata,
+            self.get_anndata_manager(adata, required=True),
             model_fn,
             groupby,
             group1,
