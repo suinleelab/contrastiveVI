@@ -714,7 +714,7 @@ class TotalContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
                 batch_size=batch_size,
                 expression_type=None,
                 indices_to_return_salient=target_idx,
-                n_samples=1,
+                n_samples=100,
             )
         else:
             model_fn = partial(
@@ -725,7 +725,7 @@ class TotalContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
                 protein_prior_count=protein_prior_count,
                 batch_size=batch_size,
                 expression_type="salient",
-                n_samples=1,
+                n_samples=100,
             )
 
         result = _de_core(

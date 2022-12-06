@@ -604,6 +604,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         fdr_target: float = 0.05,
         silent: bool = False,
         target_idx: Optional[Sequence[int]] = None,
+        n_samples: int = 1,
         **kwargs,
     ) -> pd.DataFrame:
         r"""
@@ -674,7 +675,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
             model_fn = partial(
                 self.get_specific_normalized_expression,
                 return_numpy=True,
-                n_samples=100,
+                n_samples=n_samples,
                 batch_size=batch_size,
                 expression_type=None,
                 indices_to_return_salient=target_idx,
@@ -683,7 +684,7 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
             model_fn = partial(
                 self.get_specific_normalized_expression,
                 return_numpy=True,
-                n_samples=100,
+                n_samples=n_samples,
                 batch_size=batch_size,
                 expression_type="salient",
                 indices_to_return_salient=None,
