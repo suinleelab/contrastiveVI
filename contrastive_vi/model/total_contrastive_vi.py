@@ -10,14 +10,9 @@ import numpy as np
 import pandas as pd
 import torch
 from anndata import AnnData
-
 from scvi import REGISTRY_KEYS
-from scvi.dataloaders import AnnDataLoader
 from scvi._compat import Literal
-from scvi._types import Number
-from scvi._utils import _doc_params
 from scvi.data import AnnDataManager
-from scvi.data._utils import _check_nonnegative_integers
 from scvi.data.fields import (
     CategoricalJointObsField,
     CategoricalObsField,
@@ -26,19 +21,18 @@ from scvi.data.fields import (
     NumericalObsField,
     ProteinObsmField,
 )
-from scvi.dataloaders import DataSplitter
+from scvi.dataloaders import AnnDataLoader
 from scvi.model._utils import (
     _get_batch_code_from_category,
     _init_library_size,
     cite_seq_raw_counts_properties,
 )
+from scvi.model.base import BaseModelClass
 from scvi.model.base._utils import _de_core
 from scvi.utils._docstrings import setup_anndata_dsp
 
 from contrastive_vi.model.base.training_mixin import ContrastiveTrainingMixin
 from contrastive_vi.module.total_contrastive_vi import TotalContrastiveVIModule
-
-from scvi.model.base import BaseModelClass
 
 logger = logging.getLogger(__name__)
 Number = Union[int, float]
@@ -187,8 +181,9 @@ class TotalContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         protein_expression_obsm_key
             key in `adata.obsm` for protein expression data.
         protein_names_uns_key
-            key in `adata.uns` for protein names. If None, will use the column names of `adata.obsm[protein_expression_obsm_key]`
-            if it is a DataFrame, else will assign sequential names to proteins.
+            key in `adata.uns` for protein names. If None, will use the column names of
+            `adata.obsm[protein_expression_obsm_key]` if it is a DataFrame, else will
+            assign sequential names to proteins.
         %(param_batch_key)s
         %(param_layer)s
         %(param_size_factor_key)s
@@ -750,3 +745,55 @@ class TotalContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         )
 
         return result
+
+    @torch.no_grad()
+    def get_latent_library_size(
+        self,
+        adata: Optional[AnnData] = None,
+        indices: Optional[Sequence[int]] = None,
+        give_mean: bool = True,
+        batch_size: Optional[int] = None,
+    ) -> np.ndarray:
+        r"""
+        Returns the latent library size for each cell.
+        This is denoted as :math:`\ell_n` in the scVI paper.
+        Parameters
+        ----------
+        adata
+            AnnData object with equivalent structure to initial AnnData. If `None`,
+            defaults to the AnnData object used to initialize the model.
+        indices
+            Indices of cells in adata to use. If `None`, all cells are used.
+        give_mean
+            Return the mean or a sample from the posterior distribution.
+        batch_size
+            Minibatch size for data loading into model. Defaults to
+            `scvi.settings.batch_size`.
+        """
+        self._check_if_trained(warn=False)
+
+        adata = self._validate_anndata(adata)
+        scdl = self._make_data_loader(
+            adata=adata, indices=indices, batch_size=batch_size
+        )
+        libraries = []
+        for tensors in scdl:
+            x = tensors[REGISTRY_KEYS.X_KEY]
+            y = tensors[REGISTRY_KEYS.PROTEIN_EXP_KEY]
+            batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
+            outputs = self.module._generic_inference(x=x, y=y, batch_index=batch_index)
+
+            library = outputs["library_gene"]
+            if not give_mean:
+                library = torch.exp(library)
+            else:
+                ql = (outputs["ql_m"], outputs["ql_v"])
+                if ql is None:
+                    raise RuntimeError(
+                        "The module for this model does not compute the posterior"
+                        "distribution for the library size. Set `give_mean` to False to"
+                        "use the observed library size instead."
+                    )
+                library = torch.distributions.LogNormal(ql[0], ql[1]).mean
+            libraries += [library.cpu()]
+        return torch.cat(libraries).numpy()
