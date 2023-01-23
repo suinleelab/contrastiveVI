@@ -725,3 +725,55 @@ class ContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         output *= scaling
         output = output.cpu().numpy()
         return output
+
+    @torch.no_grad()
+    def get_latent_library_size(
+        self,
+        adata: Optional[AnnData] = None,
+        indices: Optional[Sequence[int]] = None,
+        give_mean: bool = True,
+        batch_size: Optional[int] = None,
+    ) -> np.ndarray:
+        r"""
+        Returns the latent library size for each cell.
+        This is denoted as :math:`\ell_n` in the scVI paper.
+        Parameters
+        ----------
+        adata
+            AnnData object with equivalent structure to initial AnnData. If `None`,
+            defaults to the AnnData object used to initialize the model.
+        indices
+            Indices of cells in adata to use. If `None`, all cells are used.
+        give_mean
+            Return the mean or a sample from the posterior distribution.
+        batch_size
+            Minibatch size for data loading into model. Defaults to
+            `scvi.settings.batch_size`.
+        """
+        self._check_if_trained(warn=False)
+
+        adata = self._validate_anndata(adata)
+        scdl = self._make_data_loader(
+            adata=adata, indices=indices, batch_size=batch_size
+        )
+        libraries = []
+        for tensors in scdl:
+            x = tensors[REGISTRY_KEYS.X_KEY]
+            batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
+            outputs = self.module._generic_inference(x=x, batch_index=batch_index)
+
+            library = outputs["library"]
+            if not give_mean:
+                library = torch.exp(library)
+            else:
+                ql = (outputs["ql_m"], outputs["ql_v"])
+                if ql is None:
+
+                    raise RuntimeError(
+                        "The module for this model does not compute the posterior"
+                        "distribution for the library size. Set `give_mean` to False"
+                        "to use the observed library size instead."
+                    )
+                library = torch.distributions.LogNormal(ql[0], ql[1]).mean
+            libraries += [library.cpu()]
+        return torch.cat(libraries).numpy()
