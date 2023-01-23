@@ -755,8 +755,8 @@ class TotalContrastiveVIModel(ContrastiveTrainingMixin, BaseModelClass):
         batch_size: Optional[int] = None,
     ) -> np.ndarray:
         r"""
-        Returns the latent library size for each cell.
-        This is denoted as :math:`\ell_n` in the scVI paper.
+        Returns the latent RNA library size for each cell.
+        This is denoted as :math:`\ell_n` in the totalVI paper.
         Parameters
         ----------
         adata
