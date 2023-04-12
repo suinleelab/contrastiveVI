@@ -19,7 +19,7 @@ To install the latest version of contrastiveVI via pip
 pip install contrastive-vi
 ```
 
-Installation should take no more than 15 minutes.
+Installation should take no more than 5 minutes.
 
 ### What you can do with contrastiveVI
 
