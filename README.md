@@ -19,6 +19,8 @@ To install the latest version of contrastiveVI via pip
 pip install contrastive-vi
 ```
 
+Installation should take no more than 5 minutes.
+
 ### What you can do with contrastiveVI
 
 * If you have a dataset with cells in a background condition (e.g. from healthy
