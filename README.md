@@ -11,7 +11,7 @@ implemented in [scvi-tools](https://scvi-tools.org/).
 
 ## User guide
 
-**Note: This implementation of contrastiveVI is no longer maintained. Please see the main [scvi-tools](https://scvi-tools.org/) repository for the most up to date version of contrastiveVI, along with an updated tutorial [here](https://docs.scvi-tools.org/en/stable/tutorials/notebooks/scrna/contrastiveVI_tutorial.html).
+**Note: This implementation of contrastiveVI is no longer maintained. Please see the main [scvi-tools](https://scvi-tools.org/) repository for the most up to date version of contrastiveVI, along with an updated tutorial [here](https://docs.scvi-tools.org/en/stable/tutorials/notebooks/scrna/contrastiveVI_tutorial.html).**
 
 ### Installation
 
